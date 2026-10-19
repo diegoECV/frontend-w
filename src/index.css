@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-green: #10b981;
+  --color-brand-purple: #8b5cf6;
+  --color-brand-blue: #3b82f6;
+  --color-brand-amber: #f59e0b;
+}
+
+@layer base {
+  :root {
+    /* ── Modo Claro (Limpio, Nítido, Alto Contraste WCAG AA) ───────────── */
+    --bg-app: #f9fafb;             /* Fondo neutro y limpio, sin tinte gris azulado */
+    --surface-card: #ffffff;       /* Tarjetas sólidas, blancas y nítidas */
+    --surface-subtle: #f3f4f6;     /* Inputs, cabeceras de tablas y contenedores secundarios */
+    --surface-hover: #f1f5f9;      /* Hover states */
+    --header-bg: #ffffff;          /* Barra superior limpia, no translúcida sucia */
+    --sidebar-bg: #ffffff;         /* Menú lateral blanco limpio */
+    
+    --border-subtle: #e5e7eb;      /* Bordes nítidos y claros */
+    --border-strong: #d1d5db;      /* Bordes activos o marcados */
+
+    --text-primary: #111827;       /* Texto principal (Contraste 15:1 con fondo blanco) */
+    --text-secondary: #374151;     /* Texto secundario y subtítulos (Contraste 9:1) */
+    --text-muted: #4b5563;         /* Texto de apoyo legible WCAG AA (Contraste 6.5:1) */
+    --text-hint: #6b7280;          /* Labels pequeños y placeholders legibles (Contraste 4.6:1) */
+
+    /* Tokens de Estados Semánticos en Modo Claro */
+    --status-optimal-bg: #ecfdf5;
+    --status-optimal-text: #065f46;
+    --status-optimal-border: #a7f3d0;
+
+    --status-warning-bg: #fffbeb;
+    --status-warning-text: #92400e;
+    --status-warning-border: #fde68a;
+
+    --status-danger-bg: #fef2f2;
+    --status-danger-text: #991b1b;
+    --status-danger-border: #fecaca;
+
+    --status-info-bg: #eff6ff;
+    --status-info-text: #1e40af;
+    --status-info-border: #bfdbfe;
+
+    /* Compatibilidad con variables previas */
+    --bg-main: var(--bg-app);
+    --bg-surface: var(--surface-card);
+    --text-main: var(--text-primary);
+    --border-color: var(--border-subtle);
+  }
+  
+  .dark {
+    /* ── Modo Oscuro (Elegante, Profundo, Acentos Neón) ─────────────────── */
+    --bg-app: #090d16;             /* Fondo oscuro profundo */
+    --surface-card: #111827;       /* Tarjetas oscuras elevadas */
+    --surface-subtle: #1a2236;     /* Contenedores secundarios oscuros */
+    --surface-hover: #1f293d;      /* Hover states */
+    --header-bg: #0d1322;          /* Header oscuro integrado */
+    --sidebar-bg: #0d1322;         /* Sidebar oscuro */
+
+    --border-subtle: #1f293d;      /* Bordes sutiles en modo oscuro */
+    --border-strong: #334155;      /* Bordes marcados */
+
+    --text-primary: #f8fafc;       /* Texto blanco de alto contraste */
+    --text-secondary: #e2e8f0;     /* Texto secundario claro */
+    --text-muted: #94a3b8;         /* Texto de apoyo visible */
+    --text-hint: #64748b;          /* Labels y placeholders */
+
+    /* Tokens de Estados Semánticos en Modo Oscuro */
+    --status-optimal-bg: rgba(16, 185, 129, 0.15);
+    --status-optimal-text: #34d399;
+    --status-optimal-border: rgba(16, 185, 129, 0.35);
+
+    --status-warning-bg: rgba(245, 158, 11, 0.15);
+    --status-warning-text: #fbbf24;
+    --status-warning-border: rgba(245, 158, 11, 0.35);
+
+    --status-danger-bg: rgba(239, 68, 68, 0.15);
+    --status-danger-text: #f87171;
+    --status-danger-border: rgba(239, 68, 68, 0.35);
+
+    --status-info-bg: rgba(59, 130, 246, 0.15);
+    --status-info-text: #60a5fa;
+    --status-info-border: rgba(59, 130, 246, 0.35);
+
+    /* Compatibilidad con variables previas */
+    --bg-main: var(--bg-app);
+    --bg-surface: var(--surface-card);
+    --text-main: var(--text-primary);
+    --border-color: var(--border-subtle);
+  }
+
+  body {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    transition: background-color 0.2s ease, color 0.2s ease;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Clases de Superficie y Tarjetas (Modernas, Sin Fondo Translúcido Sucio) */
+@layer utilities {
+  .glass {
+    background-color: var(--surface-card);
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+  }
+
+  .dark .glass {
+    background-color: rgba(17, 24, 39, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+  }
+}
