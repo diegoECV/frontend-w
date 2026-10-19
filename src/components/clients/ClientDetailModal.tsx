@@ -20,9 +20,9 @@ export const ClientDetailModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn overflow-y-auto">
-      <div className="relative w-full max-w-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl shadow-2xl overflow-hidden my-8 text-left">
+      <div className="relative w-full max-w-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-3xl shadow-2xl overflow-hidden my-8 text-left">
         {/* Header */}
-        <div className="px-6 py-6 border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]/50 flex items-start justify-between">
+        <div className="px-6 py-6 border-b border-[var(--border-subtle)] bg-[var(--surface-subtle)] flex items-start justify-between">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-500 flex items-center justify-center shrink-0">
               <Building2 size={28} />

@@ -42,9 +42,12 @@
     --status-info-text: #1e40af;
     --status-info-border: #bfdbfe;
 
-    /* Compatibilidad con variables previas */
+    /* Compatibilidad con variables previas (100% sólidas y opacas) */
     --bg-main: var(--bg-app);
     --bg-surface: var(--surface-card);
+    --bg-card: #ffffff;
+    --bg-subtle: #f8fafc;
+    --bg-input: #ffffff;
     --text-main: var(--text-primary);
     --border-color: var(--border-subtle);
   }
@@ -83,9 +86,12 @@
     --status-info-text: #60a5fa;
     --status-info-border: rgba(59, 130, 246, 0.35);
 
-    /* Compatibilidad con variables previas */
+    /* Compatibilidad con variables previas (100% sólidas y opacas en modo oscuro) */
     --bg-main: var(--bg-app);
     --bg-surface: var(--surface-card);
+    --bg-card: #111827;
+    --bg-subtle: #1a2236;
+    --bg-input: #1a2236;
     --text-main: var(--text-primary);
     --border-color: var(--border-subtle);
   }
@@ -107,9 +113,8 @@
   }
 
   .dark .glass {
-    background-color: rgba(17, 24, 39, 0.85);
-    backdrop-filter: blur(12px);
+    background-color: #111827;
     border: 1px solid var(--border-subtle);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
   }
 }
