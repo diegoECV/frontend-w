@@ -38,6 +38,7 @@ export interface UserProfile {
   role: UserRole;
   status?: ClientStatus;
   department?: string;
+  phone?: string;
   avatar?: string;
   company?: CompanyInfo;
   isCompanyComplete?: boolean;

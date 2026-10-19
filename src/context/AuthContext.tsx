@@ -42,6 +42,7 @@ interface AuthContextType {
   logout: () => void;
   switchRole: (role: UserRole) => void;
   hasRole: (allowedRoles: UserRole[]) => boolean;
+  updateUser: (data: Partial<UserProfile>) => void;
 }
 
 const DEFAULT_USERS: Record<UserRole, UserProfile> = {
@@ -476,6 +477,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return allowedRoles.includes(user.role);
   };
 
+  const updateUser = (data: Partial<UserProfile>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, ...data };
+      localStorage.setItem('visons_user', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -495,6 +505,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         switchRole,
         hasRole,
+        updateUser,
       }}
     >
       {children}
