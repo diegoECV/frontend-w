@@ -606,64 +606,6 @@ export default function Login() {
                   </button>
                 </form>
 
-                {/* ── ACCESOS RÁPIDOS DE DEMO / PRUEBAS DE ROLES ── */}
-                {authMode === 'login' && (
-                  <div className="pt-3 border-t border-[var(--border-subtle)] space-y-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-hint)] block text-center">
-                      Acceso Rápido para Pruebas:
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const res = await login('diego@visons.com', 'password123');
-                          if (res.ok) {
-                            toast.success('Ingresando al Panel de Administración', {
-                              description: 'Sesión iniciada como Diego Centeno (Administrador)',
-                            });
-                            navigate('/');
-                          }
-                        }}
-                        className="p-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                      >
-                        👑 Admin
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const res = await login('carlos.planta@visons.com', 'password123');
-                          if (res.ok) {
-                            toast.success('Ingresando al Portal de Planta', {
-                              description: 'Sesión iniciada como Carlos Ramírez (Operario de Planta)',
-                            });
-                            navigate('/trabajador');
-                          }
-                        }}
-                        className="p-2 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                      >
-                        👷‍♂️ Operario
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const res = await login('compras@globalfresh.us', 'password123');
-                          if (res.ok) {
-                            toast.success('Ingresando al Portal B2B del Cliente', {
-                              description: 'Sesión iniciada como Global Fresh Imports Inc. (Cliente)',
-                            });
-                            navigate('/cliente');
-                          }
-                        }}
-                        className="p-2 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                      >
-                        🌎 Cliente B2B
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {/* Garantía de Seguridad */}
                 <div className="pt-2 text-center text-[11px] text-[var(--text-hint)] flex items-center justify-center gap-1.5">
                   <ShieldCheck size={14} className="text-emerald-500" />
