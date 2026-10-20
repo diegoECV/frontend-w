@@ -27,6 +27,9 @@ import {
   Anchor,
   Clock,
   ChevronDown,
+  RotateCcw,
+  Archive,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -46,6 +49,9 @@ import { ClientModal } from '../../components/clients/ClientModal';
 import { ClientDetailModal } from '../../components/clients/ClientDetailModal';
 import { RejectRequestModal } from '../../components/clients/RejectRequestModal';
 import { DeleteConfirmModal } from '../../components/products/DeleteConfirmModal';
+import { StatusFilterTabs, type FilterTrashStatus } from '../../components/shared/StatusFilterTabs';
+import { ImportModal } from '../../components/shared/ImportModal';
+import { notifyOperationUpdate } from '../../services/notificationService';
 
 type OutletCtx = { lang: 'es' | 'en' };
 
@@ -63,12 +69,14 @@ export default function ClientesPage() {
 
   // Search & Filter States
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterTrash, setFilterTrash] = useState<FilterTrashStatus>('active');
   const [countryFilter, setCountryFilter] = useState<string>('ALL');
   const [incotermFilter, setIncotermFilter] = useState<string>('ALL');
   const [currencyFilter, setCurrencyFilter] = useState<string>('ALL');
 
   // Export Menu State
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Modals State
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
@@ -155,6 +163,13 @@ export default function ClientesPage() {
     return Array.from(set);
   }, [clients]);
 
+  // Trash Counts
+  const clientTrashCounts = useMemo(() => {
+    const active = clients.filter((c) => c.isActive !== false && c.isDeleted !== true).length;
+    const trash = clients.filter((c) => c.isActive === false || c.isDeleted === true).length;
+    return { active, trash, all: clients.length };
+  }, [clients]);
+
   // Filtered Clients (Directorio)
   const filteredClients = useMemo(() => {
     return clients.filter((c) => {
@@ -166,13 +181,19 @@ export default function ClientesPage() {
         (c.country && c.country.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()));
 
+      const isItemDeleted = c.isActive === false || c.isDeleted === true;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
       const matchesCountry = countryFilter === 'ALL' || c.country === countryFilter;
       const matchesIncoterm = incotermFilter === 'ALL' || c.preferredIncoterm === incotermFilter;
       const matchesCurrency = currencyFilter === 'ALL' || c.preferredCurrency === currencyFilter;
 
-      return matchesSearch && matchesCountry && matchesIncoterm && matchesCurrency;
+      return matchesSearch && matchesTrash && matchesCountry && matchesIncoterm && matchesCurrency;
     });
-  }, [clients, searchTerm, countryFilter, incotermFilter, currencyFilter]);
+  }, [clients, searchTerm, filterTrash, countryFilter, incotermFilter, currencyFilter]);
 
   // Filtered Requests (Solicitudes B2B)
   const filteredRequests = useMemo(() => {
@@ -197,25 +218,94 @@ export default function ClientesPage() {
       toast.success(
         lang === 'es' ? 'Cliente actualizado exitosamente' : 'Client updated successfully'
       );
+      notifyOperationUpdate({
+        module: 'CLIENTES',
+        actionType: 'ACTUALIZACIÓN',
+        entityName: editingClient.companyName || 'Cliente B2B',
+        details: `Actualización de ficha B2B de "${editingClient.companyName || 'Cliente'}". País: ${clientData.country || editingClient.country || 'N/A'}, Incoterm: ${clientData.preferredIncoterm || editingClient.preferredIncoterm || 'N/A'}.`,
+        link: '/clientes',
+      });
     } else {
       const res = await createClient(clientData as Omit<Client, 'id'>);
       setClients((prev) => [res.data, ...prev]);
       toast.success(
         lang === 'es' ? 'Cliente B2B registrado en MongoDB' : 'B2B Client registered in MongoDB'
       );
+      notifyOperationUpdate({
+        module: 'CLIENTES',
+        actionType: 'CREACIÓN',
+        entityName: res.data.companyName || 'Nuevo Cliente B2B',
+        details: `Nuevo cliente importador B2B registrado: "${res.data.companyName || 'Cliente'}" (${res.data.country || 'Global'}).`,
+        link: '/clientes',
+      });
+    }
+  };
+
+  // RESTAURAR CLIENTE
+  const handleRestoreClient = async (client: Client) => {
+    if (!client.id) return;
+    try {
+      await updateClient(client.id, { ...client, isActive: true, isDeleted: false });
+      setClients((prev) =>
+        prev.map((c) => (c.id === client.id ? { ...c, isActive: true, isDeleted: false } : c))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Cliente "${client.companyName}" restaurado con éxito al directorio activo`
+          : `Client "${client.companyName}" restored to active directory`
+      );
+      notifyOperationUpdate({
+        module: 'CLIENTES',
+        actionType: 'RESTAURACIÓN',
+        entityName: client.companyName || 'Cliente B2B',
+        details: `El cliente B2B "${client.companyName || 'Cliente'}" fue restaurado con éxito al directorio activo.`,
+        link: '/clientes',
+      });
+    } catch (err) {
+      console.error('Error restoring client:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar cliente' : 'Failed to restore client');
     }
   };
 
   const handleDeleteClientConfirm = async () => {
     setDeleteModalState((p) => ({ ...p, isLoading: true }));
     try {
-      await deleteClient(deleteModalState.id);
-      setClients((prev) => prev.filter((c) => c.id !== deleteModalState.id));
-      toast.success(
-        lang === 'es'
-          ? `Cliente "${deleteModalState.name}" eliminado del directorio`
-          : `Client "${deleteModalState.name}" deleted successfully`
-      );
+      if (filterTrash === 'trash') {
+        // Purga definitiva
+        await deleteClient(deleteModalState.id);
+        setClients((prev) => prev.filter((c) => c.id !== deleteModalState.id));
+        toast.success(
+          lang === 'es'
+            ? `Cliente "${deleteModalState.name}" eliminado definitivamente`
+            : `Client "${deleteModalState.name}" permanently deleted`
+        );
+        notifyOperationUpdate({
+          module: 'CLIENTES',
+          actionType: 'PAPELERA',
+          entityName: deleteModalState.name,
+          details: `Cliente "${deleteModalState.name}" purgado permanentemente del directorio MongoDB.`,
+          link: '/clientes',
+        });
+      } else {
+        // Eliminación lógica (Mover a Papelera)
+        const target = clients.find((c) => c.id === deleteModalState.id);
+        await updateClient(deleteModalState.id, { ...target, isActive: false, isDeleted: true });
+        setClients((prev) =>
+          prev.map((c) => (c.id === deleteModalState.id ? { ...c, isActive: false, isDeleted: true } : c))
+        );
+        toast.success(
+          lang === 'es'
+            ? `Cliente "${deleteModalState.name}" enviado a la papelera (eliminado lógicamente)`
+            : `Client "${deleteModalState.name}" moved to trash (soft deleted)`
+        );
+        notifyOperationUpdate({
+          module: 'CLIENTES',
+          actionType: 'PAPELERA',
+          entityName: deleteModalState.name,
+          details: `Cliente "${deleteModalState.name}" trasladado a la papelera lógica.`,
+          link: '/clientes',
+        });
+      }
       setDeleteModalState((p) => ({ ...p, isOpen: false }));
     } catch (err) {
       console.error('Error deleting client:', err);
@@ -260,6 +350,13 @@ export default function ClientesPage() {
           ? `Solicitud de "${req.company.companyName}" aprobada y cliente registrado en el directorio`
           : `Request for "${req.company.companyName}" approved and registered in directory`
       );
+      notifyOperationUpdate({
+        module: 'CLIENTES',
+        actionType: 'ACTUALIZACIÓN',
+        entityName: req.company.companyName,
+        details: `Solicitud de registro B2B para "${req.company.companyName}" (${req.company.country}) aprobada por administración.`,
+        link: '/clientes',
+      });
     } catch (err) {
       console.warn('Cliente aprobado localmente, error al sincronizar con MongoDB:', err);
       toast.info(
@@ -424,6 +521,16 @@ export default function ClientesPage() {
               </div>
             )}
           </div>
+
+          {/* Import Button */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] text-[var(--text-primary)] text-xs font-semibold hover:bg-[var(--bg-subtle)] transition-colors cursor-pointer shadow-sm"
+            title={lang === 'es' ? 'Importar clientes desde Excel o CSV' : 'Import clients from Excel or CSV'}
+          >
+            <Upload size={15} className="text-emerald-500" />
+            <span>{lang === 'es' ? 'Importar' : 'Import'}</span>
+          </button>
 
           {/* New Client CTA */}
           <button
@@ -596,12 +703,40 @@ export default function ClientesPage() {
               <option value="PEN">PEN (S/)</option>
             </select>
 
+            {/* Status Trash Tabs */}
+            <StatusFilterTabs
+              current={filterTrash}
+              onChange={setFilterTrash}
+              counts={clientTrashCounts}
+              lang={lang}
+            />
+
             <span className="text-xs text-[var(--text-hint)] pl-2 border-l border-[var(--border-subtle)]">
               {filteredClients.length} {lang === 'es' ? 'empresas' : 'companies'}
             </span>
           </div>
         )}
       </div>
+
+      {/* ── Informative Banner when in Trash ── */}
+      {filterTrash === 'trash' && activeTab === 'directorio' && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400 font-semibold">
+            <Archive size={18} className="shrink-0" />
+            <span>
+              {lang === 'es'
+                ? 'Estás visualizando la papelera de clientes B2B (eliminados lógicamente). Puedes restaurar cualquiera de ellos con un solo clic.'
+                : 'Viewing trash for B2B clients (soft deleted). You can restore any client with a single click.'}
+            </span>
+          </div>
+          <button
+            onClick={() => setFilterTrash('active')}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors shrink-0 text-xs shadow-md shadow-rose-600/20 cursor-pointer self-start sm:self-center"
+          >
+            {lang === 'es' ? '← Ver Activos' : '← View Active'}
+          </button>
+        </div>
+      )}
 
       {/* ── Table Container ── */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl shadow-sm overflow-hidden">
@@ -738,37 +873,66 @@ export default function ClientesPage() {
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => setDetailModalClient(client)}
-                            title={lang === 'es' ? 'Ver ficha comercial' : 'View details'}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-blue-500 hover:border-blue-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Eye size={13} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setEditingClient(client);
-                              setIsClientModalOpen(true);
-                            }}
-                            title={lang === 'es' ? 'Editar cliente' : 'Edit client'}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-blue-500 hover:border-blue-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setDeleteModalState({
-                                isOpen: true,
-                                id: client.id || '',
-                                name: client.companyName || 'Cliente',
-                                isLoading: false,
-                              });
-                            }}
-                            title={lang === 'es' ? 'Eliminar cliente' : 'Delete client'}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {client.isActive === false || client.isDeleted === true ? (
+                            <>
+                              <button
+                                onClick={() => handleRestoreClient(client)}
+                                title={lang === 'es' ? 'Restaurar al directorio activo' : 'Restore to active directory'}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                              >
+                                <RotateCcw size={13} />
+                                <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteModalState({
+                                    isOpen: true,
+                                    id: client.id || '',
+                                    name: client.companyName || 'Cliente',
+                                    isLoading: false,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                className="w-8 h-8 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => setDetailModalClient(client)}
+                                title={lang === 'es' ? 'Ver ficha comercial' : 'View details'}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-blue-500 hover:border-blue-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Eye size={13} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingClient(client);
+                                  setIsClientModalOpen(true);
+                                }}
+                                title={lang === 'es' ? 'Editar cliente' : 'Edit client'}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-blue-500 hover:border-blue-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteModalState({
+                                    isOpen: true,
+                                    id: client.id || '',
+                                    name: client.companyName || 'Cliente',
+                                    isLoading: false,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -953,17 +1117,41 @@ export default function ClientesPage() {
       {/* ── Delete Confirmation Modal ── */}
       <DeleteConfirmModal
         isOpen={deleteModalState.isOpen}
-        title={lang === 'es' ? '¿Eliminar Cliente B2B?' : 'Delete B2B Client?'}
+        isSoftDelete={filterTrash !== 'trash'}
+        title={
+          filterTrash === 'trash'
+            ? lang === 'es'
+              ? '¿Eliminar Cliente Definitivamente?'
+              : 'Permanently Delete Client?'
+            : lang === 'es'
+            ? '¿Mover Cliente a la Papelera?'
+            : 'Move Client to Trash?'
+        }
         message={
-          lang === 'es'
-            ? 'Esta acción dará de baja al cliente del directorio de MongoDB. El historial de órdenes se mantendrá protegido.'
-            : 'This will remove the client from MongoDB directory. Existing order history will remain preserved.'
+          filterTrash === 'trash'
+            ? lang === 'es'
+              ? 'Esta acción purgará al cliente de MongoDB de manera irreversible.'
+              : 'This will permanently remove the client from MongoDB.'
+            : lang === 'es'
+            ? 'El cliente será desactivado y pasará a la papelera. Podrás restaurarlo en cualquier momento sin perder su historial.'
+            : 'The client will be deactivated and moved to trash. You can restore it anytime without losing history.'
         }
         itemName={deleteModalState.name}
         isLoading={deleteModalState.isLoading}
         lang={lang}
         onConfirm={handleDeleteClientConfirm}
         onCancel={() => setDeleteModalState((p) => ({ ...p, isOpen: false }))}
+      />
+
+      {/* ── Modal de Importación Masiva (Excel / CSV) ── */}
+      <ImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        module="clients"
+        lang={lang}
+        onSuccess={() => {
+          getClients().then((res) => setClients(res.data)).catch(console.error);
+        }}
       />
     </div>
   );

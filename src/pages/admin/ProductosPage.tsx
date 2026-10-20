@@ -28,6 +28,9 @@ import {
   Phone,
   CreditCard,
   ChevronDown,
+  RotateCcw,
+  Archive,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -55,6 +58,9 @@ import {
 import { ProductModal } from '../../components/products/ProductModal';
 import { ProviderModal } from '../../components/products/ProviderModal';
 import { DeleteConfirmModal } from '../../components/products/DeleteConfirmModal';
+import { StatusFilterTabs, type FilterTrashStatus } from '../../components/shared/StatusFilterTabs';
+import { ImportModal } from '../../components/shared/ImportModal';
+import { notifyOperationUpdate } from '../../services/notificationService';
 
 type OutletCtx = { lang: 'es' | 'en' };
 
@@ -72,12 +78,14 @@ export default function ProductosPage() {
 
   // Search & Filter States
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterTrash, setFilterTrash] = useState<FilterTrashStatus>('active');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [certificationFilter, setCertificationFilter] = useState<string>('ALL');
 
   // Dropdown States
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Modals State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -167,6 +175,19 @@ export default function ProductosPage() {
     };
   }, [products, providers]);
 
+  // Trash Counts
+  const productTrashCounts = useMemo(() => {
+    const active = products.filter((p) => p.isActive !== false && p.isDeleted !== true).length;
+    const trash = products.filter((p) => p.isActive === false || p.isDeleted === true).length;
+    return { active, trash, all: products.length };
+  }, [products]);
+
+  const providerTrashCounts = useMemo(() => {
+    const active = providers.filter((p) => p.isActive !== false && p.isDeleted !== true).length;
+    const trash = providers.filter((p) => p.isActive === false || p.isDeleted === true).length;
+    return { active, trash, all: providers.length };
+  }, [providers]);
+
   // Filtered Products
   const filteredProducts = useMemo(() => {
     return products.filter((item) => {
@@ -177,6 +198,12 @@ export default function ProductosPage() {
         (item.variety && item.variety.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (item.hsCode && item.hsCode.toLowerCase().includes(searchTerm.toLowerCase()));
 
+      const isItemDeleted = item.isActive === false || item.isDeleted === true;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
       const matchesStatus =
         statusFilter === 'ALL' ||
         (statusFilter === 'ACTIVE' && item.isActive !== false) ||
@@ -185,9 +212,9 @@ export default function ProductosPage() {
       const matchesCategory =
         categoryFilter === 'ALL' || item.categoryId === categoryFilter;
 
-      return matchesSearch && matchesStatus && matchesCategory;
+      return matchesSearch && matchesTrash && matchesStatus && matchesCategory;
     });
-  }, [products, searchTerm, statusFilter, categoryFilter]);
+  }, [products, searchTerm, filterTrash, statusFilter, categoryFilter]);
 
   // Filtered Providers
   const filteredProviders = useMemo(() => {
@@ -199,12 +226,18 @@ export default function ProductosPage() {
         (item.contactName && item.contactName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (item.address && item.address.toLowerCase().includes(searchTerm.toLowerCase()));
 
+      const isItemDeleted = item.isActive === false || item.isDeleted === true;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
       const matchesCert =
         certificationFilter === 'ALL' || item.certificationStatus === certificationFilter;
 
-      return matchesSearch && matchesCert;
+      return matchesSearch && matchesTrash && matchesCert;
     });
-  }, [providers, searchTerm, certificationFilter]);
+  }, [providers, searchTerm, filterTrash, certificationFilter]);
 
   // --- CRUD Operations: PRODUCT ---
   const handleSaveProduct = async (productData: Partial<Product>) => {
@@ -216,12 +249,26 @@ export default function ProductosPage() {
       toast.success(
         lang === 'es' ? 'Producto actualizado exitosamente' : 'Product updated successfully'
       );
+      notifyOperationUpdate({
+        module: 'PRODUCTOS',
+        actionType: 'ACTUALIZACIÓN',
+        entityName: editingProduct.name,
+        details: `Actualización de ficha técnica del producto "${editingProduct.name}". Variedad: ${productData.variety || editingProduct.variety || 'N/A'}.`,
+        link: '/productos',
+      });
     } else {
       const res = await createProduct(productData as Omit<Product, 'id'>);
       setProducts((prev) => [res.data, ...prev]);
       toast.success(
         lang === 'es' ? 'Producto registrado en el catálogo' : 'Product registered in catalog'
       );
+      notifyOperationUpdate({
+        module: 'PRODUCTOS',
+        actionType: 'CREACIÓN',
+        entityName: res.data.name || 'Nuevo Producto',
+        details: `Nuevo producto agrícola "${res.data.name}" registrado en el catálogo maestro.`,
+        link: '/productos',
+      });
     }
   };
 
@@ -244,6 +291,13 @@ export default function ProductosPage() {
           ? `Producto "${product.name}" desactivado`
           : `Product "${product.name}" deactivated`
       );
+      notifyOperationUpdate({
+        module: 'PRODUCTOS',
+        actionType: 'CAMBIO DE ESTADO',
+        entityName: product.name,
+        details: `El estado del producto "${product.name}" cambió a ${newStatus ? 'ACTIVO' : 'INACTIVO'}.`,
+        link: '/productos',
+      });
     } catch (err) {
       console.error('Error toggling status:', err);
       // Rollback
@@ -254,16 +308,71 @@ export default function ProductosPage() {
     }
   };
 
+  // RESTAURAR PRODUCTO
+  const handleRestoreProduct = async (product: Product) => {
+    if (!product.id) return;
+    try {
+      await updateProduct(product.id, { ...product, isActive: true, isDeleted: false });
+      setProducts((prev) =>
+        prev.map((p) => (p.id === product.id ? { ...p, isActive: true, isDeleted: false } : p))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Producto "${product.name}" restaurado con éxito al catálogo activo`
+          : `Product "${product.name}" restored to active catalog`
+      );
+      notifyOperationUpdate({
+        module: 'PRODUCTOS',
+        actionType: 'RESTAURACIÓN',
+        entityName: product.name,
+        details: `El producto "${product.name}" ha sido restaurado exitosamente desde la papelera al catálogo activo.`,
+        link: '/productos',
+      });
+    } catch (err) {
+      console.error('Error restoring product:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar producto' : 'Failed to restore product');
+    }
+  };
+
   const handleDeleteProductConfirm = async () => {
     setDeleteModalState((p) => ({ ...p, isLoading: true }));
     try {
-      await deleteProduct(deleteModalState.id);
-      setProducts((prev) => prev.filter((p) => p.id !== deleteModalState.id));
-      toast.success(
-        lang === 'es'
-          ? `Producto "${deleteModalState.name}" eliminado del catálogo`
-          : `Product "${deleteModalState.name}" removed from catalog`
-      );
+      if (filterTrash === 'trash') {
+        // Purga definitiva
+        await deleteProduct(deleteModalState.id);
+        setProducts((prev) => prev.filter((p) => p.id !== deleteModalState.id));
+        toast.success(
+          lang === 'es'
+            ? `Producto "${deleteModalState.name}" eliminado definitivamente`
+            : `Product "${deleteModalState.name}" permanently deleted`
+        );
+        notifyOperationUpdate({
+          module: 'PRODUCTOS',
+          actionType: 'PAPELERA',
+          entityName: deleteModalState.name,
+          details: `El producto "${deleteModalState.name}" fue purgado permanentemente de la base de datos.`,
+          link: '/productos',
+        });
+      } else {
+        // Eliminación lógica (Mover a Papelera)
+        const target = products.find((p) => p.id === deleteModalState.id);
+        await updateProduct(deleteModalState.id, { ...target, isActive: false, isDeleted: true });
+        setProducts((prev) =>
+          prev.map((p) => (p.id === deleteModalState.id ? { ...p, isActive: false, isDeleted: true } : p))
+        );
+        toast.success(
+          lang === 'es'
+            ? `Producto "${deleteModalState.name}" enviado a la papelera (eliminado lógicamente)`
+            : `Product "${deleteModalState.name}" moved to trash (soft deleted)`
+        );
+        notifyOperationUpdate({
+          module: 'PRODUCTOS',
+          actionType: 'PAPELERA',
+          entityName: deleteModalState.name,
+          details: `El producto "${deleteModalState.name}" fue movido a la papelera lógica (anulado).`,
+          link: '/productos',
+        });
+      }
       setDeleteModalState((p) => ({ ...p, isOpen: false }));
     } catch (err) {
       console.error('Error deleting product:', err);
@@ -285,25 +394,94 @@ export default function ProductosPage() {
       toast.success(
         lang === 'es' ? 'Proveedor actualizado con éxito' : 'Supplier updated successfully'
       );
+      notifyOperationUpdate({
+        module: 'PRODUCTOS',
+        actionType: 'ACTUALIZACIÓN',
+        entityName: editingProvider.companyName,
+        details: `Actualización de información del proveedor "${editingProvider.companyName}". Documento: ${providerData.documentNumber || editingProvider.documentNumber}.`,
+        link: '/productos',
+      });
     } else {
       const res = await createProvider(providerData as Omit<Provider, 'id'>);
       setProviders((prev) => [res.data, ...prev]);
       toast.success(
         lang === 'es' ? 'Proveedor registrado en la red agrícola' : 'Supplier registered successfully'
       );
+      notifyOperationUpdate({
+        module: 'PRODUCTOS',
+        actionType: 'CREACIÓN',
+        entityName: res.data.companyName,
+        details: `Nuevo proveedor agrícola registrado: "${res.data.companyName}" (${res.data.documentType}: ${res.data.documentNumber}).`,
+        link: '/productos',
+      });
+    }
+  };
+
+  // RESTAURAR PROVEEDOR
+  const handleRestoreProvider = async (provider: Provider) => {
+    if (!provider.id) return;
+    try {
+      await updateProvider(provider.id, { ...provider, isActive: true, isDeleted: false });
+      setProviders((prev) =>
+        prev.map((p) => (p.id === provider.id ? { ...p, isActive: true, isDeleted: false } : p))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Proveedor "${provider.companyName}" restaurado con éxito a la red activa`
+          : `Supplier "${provider.companyName}" restored to active network`
+      );
+      notifyOperationUpdate({
+        module: 'PRODUCTOS',
+        actionType: 'RESTAURACIÓN',
+        entityName: provider.companyName,
+        details: `El proveedor "${provider.companyName}" fue restaurado con éxito a la red activa.`,
+        link: '/productos',
+      });
+    } catch (err) {
+      console.error('Error restoring provider:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar proveedor' : 'Failed to restore supplier');
     }
   };
 
   const handleDeleteProviderConfirm = async () => {
     setDeleteModalState((p) => ({ ...p, isLoading: true }));
     try {
-      await deleteProvider(deleteModalState.id);
-      setProviders((prev) => prev.filter((p) => p.id !== deleteModalState.id));
-      toast.success(
-        lang === 'es'
-          ? `Proveedor "${deleteModalState.name}" eliminado`
-          : `Supplier "${deleteModalState.name}" deleted`
-      );
+      if (filterTrash === 'trash') {
+        // Purga definitiva
+        await deleteProvider(deleteModalState.id);
+        setProviders((prev) => prev.filter((p) => p.id !== deleteModalState.id));
+        toast.success(
+          lang === 'es'
+            ? `Proveedor "${deleteModalState.name}" eliminado definitivamente`
+            : `Supplier "${deleteModalState.name}" permanently deleted`
+        );
+        notifyOperationUpdate({
+          module: 'PRODUCTOS',
+          actionType: 'PAPELERA',
+          entityName: deleteModalState.name,
+          details: `Proveedor "${deleteModalState.name}" purgado permanentemente.`,
+          link: '/productos',
+        });
+      } else {
+        // Eliminación lógica (Mover a Papelera)
+        const target = providers.find((p) => p.id === deleteModalState.id);
+        await updateProvider(deleteModalState.id, { ...target, isActive: false, isDeleted: true });
+        setProviders((prev) =>
+          prev.map((p) => (p.id === deleteModalState.id ? { ...p, isActive: false, isDeleted: true } : p))
+        );
+        toast.success(
+          lang === 'es'
+            ? `Proveedor "${deleteModalState.name}" enviado a la papelera (eliminado lógicamente)`
+            : `Supplier "${deleteModalState.name}" moved to trash (soft deleted)`
+        );
+        notifyOperationUpdate({
+          module: 'PRODUCTOS',
+          actionType: 'PAPELERA',
+          entityName: deleteModalState.name,
+          details: `Proveedor "${deleteModalState.name}" trasladado a la papelera lógica.`,
+          link: '/productos',
+        });
+      }
       setDeleteModalState((p) => ({ ...p, isOpen: false }));
     } catch (err) {
       console.error('Error deleting provider:', err);
@@ -469,6 +647,16 @@ export default function ProductosPage() {
               </div>
             )}
           </div>
+
+          {/* Import Button */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] text-[var(--text-primary)] text-xs font-semibold hover:bg-[var(--bg-subtle)] transition-colors cursor-pointer shadow-sm"
+            title={lang === 'es' ? 'Importar desde Excel o CSV' : 'Import from Excel or CSV'}
+          >
+            <Upload size={15} className="text-emerald-500" />
+            <span>{lang === 'es' ? 'Importar' : 'Import'}</span>
+          </button>
 
           {/* New Item CTA Button */}
           {activeTab === 'products' ? (
@@ -656,6 +844,14 @@ export default function ProductosPage() {
             </>
           )}
 
+          {/* Status Trash Tabs */}
+          <StatusFilterTabs
+            current={filterTrash}
+            onChange={setFilterTrash}
+            counts={activeTab === 'products' ? productTrashCounts : providerTrashCounts}
+            lang={lang}
+          />
+
           {/* Result Count Indicator */}
           <span className="text-xs text-[var(--text-hint)] pl-2 border-l border-[var(--border-subtle)]">
             {activeTab === 'products' ? filteredProducts.length : filteredProviders.length}{' '}
@@ -663,6 +859,26 @@ export default function ProductosPage() {
           </span>
         </div>
       </div>
+
+      {/* ── Informative Banner when in Trash ── */}
+      {filterTrash === 'trash' && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400 font-semibold">
+            <Archive size={18} className="shrink-0" />
+            <span>
+              {lang === 'es'
+                ? `Estás visualizando la papelera de ${activeTab === 'products' ? 'productos' : 'proveedores'} (eliminados lógicamente). Haz clic en "Restaurar" para reactivarlos inmediatamente en el catálogo.`
+                : `Viewing trash for ${activeTab === 'products' ? 'products' : 'suppliers'} (soft deleted). Click "Restore" to reactivate any record immediately.`}
+            </span>
+          </div>
+          <button
+            onClick={() => setFilterTrash('active')}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors shrink-0 text-xs shadow-md shadow-rose-600/20 cursor-pointer self-start sm:self-center"
+          >
+            {lang === 'es' ? '← Ver Activos' : '← View Active'}
+          </button>
+        </div>
+      )}
 
       {/* ── Table Container ── */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl shadow-sm overflow-hidden">
@@ -779,70 +995,83 @@ export default function ProductosPage() {
                         {prod.hsCode || '—'}
                       </td>
 
-                      {/* Status Toggle Switch */}
+                      {/* Status Column */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        <button
-                          onClick={() => handleToggleProductStatus(prod)}
-                          title={
-                            prod.isActive !== false
-                              ? lang === 'es'
-                                ? 'Click para desactivar'
-                                : 'Click to deactivate'
-                              : lang === 'es'
-                              ? 'Click para activar'
-                              : 'Click to activate'
-                          }
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors cursor-pointer"
-                          style={{
-                            backgroundColor: prod.isActive !== false ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                            borderColor: prod.isActive !== false ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
-                            color: prod.isActive !== false ? '#10b981' : '#ef4444',
-                          }}
-                        >
-                          <span
-                            className="w-1.5 h-1.5 rounded-full"
-                            style={{ backgroundColor: prod.isActive !== false ? '#10b981' : '#ef4444' }}
-                          />
-                          <span>
-                            {prod.isActive !== false
-                              ? lang === 'es'
-                                ? 'Activo'
-                                : 'Active'
-                              : lang === 'es'
-                              ? 'Inactivo'
-                              : 'Inactive'}
+                        {prod.isActive === false || prod.isDeleted === true ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 border border-rose-500/25 text-rose-500">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                            <span>{lang === 'es' ? 'Eliminado Lógicamente' : 'Soft Deleted'}</span>
                           </span>
-                        </button>
+                        ) : (
+                          <button
+                            onClick={() => handleToggleProductStatus(prod)}
+                            title={lang === 'es' ? 'Click para desactivar' : 'Click to deactivate'}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors cursor-pointer bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span>{lang === 'es' ? 'Activo' : 'Active'}</span>
+                          </button>
+                        )}
                       </td>
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingProduct(prod);
-                              setIsProductModalOpen(true);
-                            }}
-                            title={lang === 'es' ? 'Editar producto' : 'Edit product'}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-amber-500 hover:border-amber-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setDeleteModalState({
-                                isOpen: true,
-                                type: 'product',
-                                id: prod.id || '',
-                                name: prod.name,
-                                isLoading: false,
-                              });
-                            }}
-                            title={lang === 'es' ? 'Eliminar producto' : 'Delete product'}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {prod.isActive === false || prod.isDeleted === true ? (
+                            <>
+                              <button
+                                onClick={() => handleRestoreProduct(prod)}
+                                title={lang === 'es' ? 'Restaurar al catálogo activo' : 'Restore to active catalog'}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                              >
+                                <RotateCcw size={13} />
+                                <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteModalState({
+                                    isOpen: true,
+                                    type: 'product',
+                                    id: prod.id || '',
+                                    name: prod.name,
+                                    isLoading: false,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                className="w-8 h-8 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingProduct(prod);
+                                  setIsProductModalOpen(true);
+                                }}
+                                title={lang === 'es' ? 'Editar producto' : 'Edit product'}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-amber-500 hover:border-amber-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteModalState({
+                                    isOpen: true,
+                                    type: 'product',
+                                    id: prod.id || '',
+                                    name: prod.name,
+                                    isLoading: false,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1019,31 +1248,61 @@ export default function ProductosPage() {
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingProvider(prov);
-                              setIsProviderModalOpen(true);
-                            }}
-                            title={lang === 'es' ? 'Editar proveedor' : 'Edit supplier'}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-emerald-500 hover:border-emerald-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setDeleteModalState({
-                                isOpen: true,
-                                type: 'provider',
-                                id: prov.id || '',
-                                name: prov.companyName,
-                                isLoading: false,
-                              });
-                            }}
-                            title={lang === 'es' ? 'Eliminar proveedor' : 'Delete supplier'}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {prov.isActive === false || prov.isDeleted === true ? (
+                            <>
+                              <button
+                                onClick={() => handleRestoreProvider(prov)}
+                                title={lang === 'es' ? 'Restaurar a la red activa' : 'Restore to active network'}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                              >
+                                <RotateCcw size={13} />
+                                <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteModalState({
+                                    isOpen: true,
+                                    type: 'provider',
+                                    id: prov.id || '',
+                                    name: prov.companyName,
+                                    isLoading: false,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                className="w-8 h-8 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingProvider(prov);
+                                  setIsProviderModalOpen(true);
+                                }}
+                                title={lang === 'es' ? 'Editar proveedor' : 'Edit supplier'}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-emerald-500 hover:border-emerald-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteModalState({
+                                    isOpen: true,
+                                    type: 'provider',
+                                    id: prov.id || '',
+                                    name: prov.companyName,
+                                    isLoading: false,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1078,23 +1337,32 @@ export default function ProductosPage() {
       {/* ── Delete Confirmation Modal ── */}
       <DeleteConfirmModal
         isOpen={deleteModalState.isOpen}
+        isSoftDelete={filterTrash !== 'trash'}
         title={
-          deleteModalState.type === 'product'
+          filterTrash === 'trash'
+            ? deleteModalState.type === 'product'
+              ? lang === 'es'
+                ? '¿Eliminar Producto Definitivamente?'
+                : 'Permanently Delete Product?'
+              : lang === 'es'
+              ? '¿Eliminar Proveedor Definitivamente?'
+              : 'Permanently Delete Supplier?'
+            : deleteModalState.type === 'product'
             ? lang === 'es'
-              ? '¿Eliminar Producto del Catálogo?'
-              : 'Delete Product from Catalog?'
+              ? '¿Mover Producto a la Papelera?'
+              : 'Move Product to Trash?'
             : lang === 'es'
-            ? '¿Eliminar Proveedor Agrícola?'
-            : 'Delete Agricultural Supplier?'
+            ? '¿Mover Proveedor a la Papelera?'
+            : 'Move Supplier to Trash?'
         }
         message={
-          deleteModalState.type === 'product'
+          filterTrash === 'trash'
             ? lang === 'es'
-              ? 'Esta acción eliminará el producto permanentemente de la base de datos MongoDB. Las órdenes existentes mantendrán su histórico.'
-              : 'This action will permanently delete the product from MongoDB. Existing orders will retain historical records.'
+              ? 'Esta acción purgará el registro de la base de datos de manera irreversible.'
+              : 'This action will permanently purge the record from the database.'
             : lang === 'es'
-              ? 'Se dará de baja al productor de la red de proveedores homologados.'
-              : 'The farm/grower will be permanently removed from the certified supplier registry.'
+            ? 'El registro será desactivado y pasará a la papelera. Podrás restaurarlo en cualquier momento sin perder sus datos.'
+            : 'The record will be deactivated and moved to trash. You can restore it anytime without data loss.'
         }
         itemName={deleteModalState.name}
         isLoading={deleteModalState.isLoading}
@@ -1105,6 +1373,15 @@ export default function ProductosPage() {
             : handleDeleteProviderConfirm
         }
         onCancel={() => setDeleteModalState((p) => ({ ...p, isOpen: false }))}
+      />
+
+      {/* ── Modal de Importación Masiva (Excel / CSV) ── */}
+      <ImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        module={activeTab === 'products' ? 'products' : 'providers'}
+        lang={lang}
+        onSuccess={() => fetchData(true)}
       />
     </div>
   );

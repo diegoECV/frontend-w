@@ -33,6 +33,8 @@ export interface Invoice {
   taxes?: number | null;
   total: number;
   status: InvoiceStatus;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
 }
 
 export type PaymentMethod =
@@ -52,6 +54,8 @@ export interface Payment {
   paymentMethod: PaymentMethod;
   referenceCode?: string | null;
   notes?: string | null;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
 }
 
 export interface PriceItem {
@@ -67,4 +71,7 @@ export interface PriceList {
   validUntil?: string | null;
   currency: string;
   items?: PriceItem[] | null;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
 }
+

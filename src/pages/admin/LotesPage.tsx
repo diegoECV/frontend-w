@@ -21,6 +21,8 @@ import {
   MapPin,
   Clock,
   Sparkles,
+  RotateCcw,
+  Archive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -44,6 +46,8 @@ import { getProviders } from '../../api/providerApi';
 import { BatchModal } from '../../components/batches/BatchModal';
 import { InventoryModal } from '../../components/batches/InventoryModal';
 import { DeleteConfirmModal } from '../../components/products/DeleteConfirmModal';
+import { StatusFilterTabs, type FilterTrashStatus } from '../../components/shared/StatusFilterTabs';
+import { notifyOperationUpdate } from '../../services/notificationService';
 
 type OutletCtx = { lang: 'es' | 'en' };
 
@@ -65,6 +69,7 @@ export default function LotesPage() {
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterTrash, setFilterTrash] = useState<FilterTrashStatus>('active');
   const [statusFilter, setStatusFilter] = useState<'ALL' | QualityStatus>('ALL');
   const [productFilter, setProductFilter] = useState<string>('ALL');
 
@@ -155,6 +160,19 @@ export default function LotesPage() {
     return found ? (found.companyName || found.documentNumber) : docOrId;
   };
 
+  // Trash Counts
+  const batchTrashCounts = useMemo(() => {
+    const active = batches.filter((b) => b.isActive !== false && b.isDeleted !== true).length;
+    const trash = batches.filter((b) => b.isActive === false || b.isDeleted === true).length;
+    return { active, trash, all: batches.length };
+  }, [batches]);
+
+  const inventoryTrashCounts = useMemo(() => {
+    const active = inventory.filter((i) => i.isActive !== false && i.isDeleted !== true).length;
+    const trash = inventory.filter((i) => i.isActive === false || i.isDeleted === true).length;
+    return { active, trash, all: inventory.length };
+  }, [inventory]);
+
   // Filtered Batches
   const filteredBatches = useMemo(() => {
     return batches.filter((b) => {
@@ -166,25 +184,38 @@ export default function LotesPage() {
         getProductName(b.productId).toLowerCase().includes(searchTerm.toLowerCase()) ||
         getProviderName(b.providerId).toLowerCase().includes(searchTerm.toLowerCase());
 
+      const isItemDeleted = b.isActive === false || b.isDeleted === true;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
       const status = b.inspections?.[0]?.qualityStatus || 'PENDING';
       const matchesStatus = statusFilter === 'ALL' || status === statusFilter;
       const matchesProduct = productFilter === 'ALL' || b.productId === productFilter;
 
-      return matchesSearch && matchesStatus && matchesProduct;
+      return matchesSearch && matchesTrash && matchesStatus && matchesProduct;
     });
-  }, [batches, searchTerm, statusFilter, productFilter, products, providers]);
+  }, [batches, searchTerm, filterTrash, statusFilter, productFilter, products, providers]);
 
   // Filtered Inventory
   const filteredInventory = useMemo(() => {
     return inventory.filter((item) => {
-      if (!searchTerm.trim()) return true;
-      return (
+      const isItemDeleted = item.isActive === false || item.isDeleted === true;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
+      if (!searchTerm.trim()) return matchesTrash;
+      const matchesSearch =
         (item.fieldName && item.fieldName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (item.productId && item.productId.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (item.id && item.id.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
+        (item.id && item.id.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      return matchesSearch && matchesTrash;
     });
-  }, [inventory, searchTerm]);
+  }, [inventory, searchTerm, filterTrash]);
 
   // --- CRUD: BATCH ---
   const handleSaveBatch = async (batchData: Partial<Batch>) => {
@@ -196,25 +227,92 @@ export default function LotesPage() {
       toast.success(
         lang === 'es' ? 'Lote actualizado exitosamente' : 'Batch updated successfully'
       );
+      notifyOperationUpdate({
+        module: 'LOTES',
+        actionType: 'ACTUALIZACIÓN',
+        entityName: `Lote #${editingBatch.batchId}`,
+        details: `Lote #${editingBatch.batchId} actualizado. Fundo: ${batchData.fieldName || editingBatch.fieldName}, Estado: ${batchData.status || editingBatch.status || 'Activo'}.`,
+        link: '/lotes',
+      });
     } else {
       const res = await createBatch(batchData as Omit<Batch, 'batchId'>);
       setBatches((prev) => [res.data, ...prev]);
       toast.success(
         lang === 'es' ? 'Lote registrado en SQL Server & MongoDB' : 'Batch registered in SQL Server & MongoDB'
       );
+      notifyOperationUpdate({
+        module: 'LOTES',
+        actionType: 'CREACIÓN',
+        entityName: `Lote #${res.data.batchId}`,
+        details: `Nuevo lote de cosecha #${res.data.batchId} registrado (Fundo: ${res.data.fieldName || 'Campo Visons'}).`,
+        link: '/lotes',
+      });
+    }
+  };
+
+  // RESTAURAR LOTE
+  const handleRestoreBatch = async (batch: Batch) => {
+    if (!batch.batchId) return;
+    try {
+      await updateBatch(batch.batchId, { ...batch, isActive: true, isDeleted: false });
+      setBatches((prev) =>
+        prev.map((b) => (b.batchId === batch.batchId ? { ...b, isActive: true, isDeleted: false } : b))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Lote #${batch.batchId} restaurado con éxito a la planta`
+          : `Batch #${batch.batchId} restored successfully`
+      );
+      notifyOperationUpdate({
+        module: 'LOTES',
+        actionType: 'RESTAURACIÓN',
+        entityName: `Lote #${batch.batchId}`,
+        details: `Lote #${batch.batchId} restaurado desde la papelera a operaciones activas en planta.`,
+        link: '/lotes',
+      });
+    } catch (err) {
+      console.error('Error restoring batch:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar lote' : 'Failed to restore batch');
     }
   };
 
   const handleDeleteBatchConfirm = async () => {
     setDeleteModalState((p) => ({ ...p, isLoading: true }));
     try {
-      await deleteBatch(Number(deleteModalState.id));
-      setBatches((prev) => prev.filter((b) => b.batchId !== Number(deleteModalState.id)));
-      toast.success(
-        lang === 'es'
-          ? `Lote #${deleteModalState.id} eliminado correctamente`
-          : `Batch #${deleteModalState.id} deleted successfully`
-      );
+      if (filterTrash === 'trash') {
+        await deleteBatch(Number(deleteModalState.id));
+        setBatches((prev) => prev.filter((b) => b.batchId !== Number(deleteModalState.id)));
+        toast.success(
+          lang === 'es'
+            ? `Lote #${deleteModalState.id} eliminado definitivamente`
+            : `Batch #${deleteModalState.id} permanently deleted`
+        );
+        notifyOperationUpdate({
+          module: 'LOTES',
+          actionType: 'PAPELERA',
+          entityName: `Lote #${deleteModalState.id}`,
+          details: `Lote #${deleteModalState.id} purgado definitivamente de la base de datos.`,
+          link: '/lotes',
+        });
+      } else {
+        const target = batches.find((b) => b.batchId === Number(deleteModalState.id));
+        await updateBatch(Number(deleteModalState.id), { ...target, isActive: false, isDeleted: true });
+        setBatches((prev) =>
+          prev.map((b) => (b.batchId === Number(deleteModalState.id) ? { ...b, isActive: false, isDeleted: true } : b))
+        );
+        toast.success(
+          lang === 'es'
+            ? `Lote #${deleteModalState.id} enviado a la papelera (anulado lógicamente)`
+            : `Batch #${deleteModalState.id} moved to trash (soft deleted)`
+        );
+        notifyOperationUpdate({
+          module: 'LOTES',
+          actionType: 'PAPELERA',
+          entityName: `Lote #${deleteModalState.id}`,
+          details: `Lote #${deleteModalState.id} enviado a la papelera lógica (anulado).`,
+          link: '/lotes',
+        });
+      }
       setDeleteModalState((p) => ({ ...p, isOpen: false }));
     } catch (err) {
       console.error('Error deleting batch:', err);
@@ -234,23 +332,88 @@ export default function LotesPage() {
       toast.success(
         lang === 'es' ? 'Stock de planta actualizado' : 'Plant inventory updated'
       );
+      notifyOperationUpdate({
+        module: 'LOTES',
+        actionType: 'ACTUALIZACIÓN',
+        entityName: `Inventario #${editingInventory.id}`,
+        details: `Stock de cámara actualizado: ${invData.quantity ?? editingInventory.quantity} cajas disponibles.`,
+        link: '/lotes',
+      });
     } else {
       const res = await createInventoryBatch(invData as Omit<InventoryBatch, 'id'>);
       setInventory((prev) => [res.data, ...prev]);
       toast.success(
         lang === 'es' ? 'Entrada de inventario registrada' : 'Inventory entry registered'
       );
+      notifyOperationUpdate({
+        module: 'LOTES',
+        actionType: 'CREACIÓN',
+        entityName: `Inventario #${res.data.id}`,
+        details: `Nueva entrada de uva en cámara de frío registrada (${res.data.quantity || 0} cajas).`,
+        link: '/lotes',
+      });
+    }
+  };
+
+  // RESTAURAR INVENTARIO
+  const handleRestoreInventory = async (inv: InventoryBatch) => {
+    if (!inv.id) return;
+    try {
+      await updateInventoryBatch(inv.id, { ...inv, isActive: true, isDeleted: false });
+      setInventory((prev) =>
+        prev.map((i) => (i.id === inv.id ? { ...i, isActive: true, isDeleted: false } : i))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Stock de planta restaurado con éxito`
+          : `Plant inventory entry restored`
+      );
+      notifyOperationUpdate({
+        module: 'LOTES',
+        actionType: 'RESTAURACIÓN',
+        entityName: `Inventario #${inv.id}`,
+        details: `Registro de inventario #${inv.id} restaurado con éxito a la cámara de frío.`,
+        link: '/lotes',
+      });
+    } catch (err) {
+      console.error('Error restoring inventory:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar inventario' : 'Failed to restore inventory');
     }
   };
 
   const handleDeleteInventoryConfirm = async () => {
     setDeleteModalState((p) => ({ ...p, isLoading: true }));
     try {
-      await deleteInventoryBatch(String(deleteModalState.id));
-      setInventory((prev) => prev.filter((i) => i.id !== String(deleteModalState.id)));
-      toast.success(
-        lang === 'es' ? 'Registro de inventario eliminado' : 'Inventory entry removed'
-      );
+      if (filterTrash === 'trash') {
+        await deleteInventoryBatch(String(deleteModalState.id));
+        setInventory((prev) => prev.filter((i) => i.id !== String(deleteModalState.id)));
+        toast.success(
+          lang === 'es' ? 'Registro de inventario eliminado definitivamente' : 'Inventory entry permanently removed'
+        );
+        notifyOperationUpdate({
+          module: 'LOTES',
+          actionType: 'PAPELERA',
+          entityName: `Inventario #${deleteModalState.id}`,
+          details: `Registro de inventario #${deleteModalState.id} eliminado permanentemente.`,
+          link: '/lotes',
+        });
+      } else {
+        const target = inventory.find((i) => i.id === String(deleteModalState.id));
+        await updateInventoryBatch(String(deleteModalState.id), { ...target, isActive: false, isDeleted: true });
+        setInventory((prev) =>
+          prev.map((i) => (i.id === String(deleteModalState.id) ? { ...i, isActive: false, isDeleted: true } : i))
+        );
+        toast.success(
+          lang === 'es' ? 'Stock de inventario enviado a la papelera' : 'Inventory entry moved to trash'
+        );
+        notifyOperationUpdate({
+          module: 'LOTES',
+          actionType: 'PAPELERA',
+          entityName: `Inventario #${deleteModalState.id}`,
+          details: `Registro de inventario #${deleteModalState.id} enviado a la papelera lógica.`,
+          link: '/lotes',
+        });
+      }
       setDeleteModalState((p) => ({ ...p, isOpen: false }));
     } catch (err) {
       console.error('Error deleting inventory:', err);
@@ -521,13 +684,47 @@ export default function LotesPage() {
                 </option>
               ))}
             </select>
-
-            <span className="text-xs text-[var(--text-hint)] pl-2 border-l border-[var(--border-subtle)]">
-              {filteredBatches.length} {lang === 'es' ? 'lotes' : 'batches'}
-            </span>
           </div>
         )}
+
+        {/* Status Trash Tabs */}
+        {(activeTab === 'lotes' || activeTab === 'inventario') && (
+          <StatusFilterTabs
+            current={filterTrash}
+            onChange={setFilterTrash}
+            counts={activeTab === 'lotes' ? batchTrashCounts : inventoryTrashCounts}
+            lang={lang}
+          />
+        )}
+
+        <span className="text-xs text-[var(--text-hint)] pl-2 border-l border-[var(--border-subtle)]">
+          {activeTab === 'lotes'
+            ? `${filteredBatches.length} ${lang === 'es' ? 'lotes' : 'batches'}`
+            : activeTab === 'inventario'
+            ? `${filteredInventory.length} ${lang === 'es' ? 'registros' : 'items'}`
+            : ''}
+        </span>
       </div>
+
+      {/* ── Informative Banner when in Trash ── */}
+      {filterTrash === 'trash' && (activeTab === 'lotes' || activeTab === 'inventario') && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400 font-semibold">
+            <Archive size={18} className="shrink-0" />
+            <span>
+              {lang === 'es'
+                ? `Estás visualizando la papelera de ${activeTab === 'lotes' ? 'lotes de cosecha' : 'inventario de planta'} (anulados lógicamente). Haz clic en "Restaurar" para reactivarlos inmediatamente en la operación.`
+                : `Viewing trash for ${activeTab === 'lotes' ? 'harvest batches' : 'plant inventory'} (soft deleted). Click "Restore" to reactivate any entry.`}
+            </span>
+          </div>
+          <button
+            onClick={() => setFilterTrash('active')}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors shrink-0 text-xs shadow-md shadow-rose-600/20 cursor-pointer self-start sm:self-center"
+          >
+            {lang === 'es' ? '← Ver Activos' : '← View Active'}
+          </button>
+        </div>
+      )}
 
       {/* ── Table Container ── */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-3xl shadow-sm overflow-hidden">
@@ -667,31 +864,61 @@ export default function LotesPage() {
                         {/* Actions */}
                         <td className="py-3.5 px-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setEditingBatch(batch);
-                                setIsBatchModalOpen(true);
-                              }}
-                              title={lang === 'es' ? 'Editar lote' : 'Edit batch'}
-                              className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-lime-500 hover:border-lime-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                            >
-                              <Edit2 size={13} />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setDeleteModalState({
-                                  isOpen: true,
-                                  type: 'batch',
-                                  id: batch.batchId || 0,
-                                  name: `Lote LOT-${String(batch.batchId).padStart(4, '0')} (${batch.fieldName})`,
-                                  isLoading: false,
-                                });
-                              }}
-                              title={lang === 'es' ? 'Eliminar lote' : 'Delete batch'}
-                              className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 flex items-center justify-center transition-colors cursor-pointer"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            {batch.isActive === false || batch.isDeleted === true ? (
+                              <>
+                                <button
+                                  onClick={() => handleRestoreBatch(batch)}
+                                  title={lang === 'es' ? 'Restaurar lote a planta' : 'Restore batch'}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-lime-500/15 hover:bg-lime-500/25 text-lime-600 dark:text-lime-400 border border-lime-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                >
+                                  <RotateCcw size={13} />
+                                  <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setDeleteModalState({
+                                      isOpen: true,
+                                      type: 'batch',
+                                      id: batch.batchId || 0,
+                                      name: `Lote LOT-${String(batch.batchId).padStart(4, '0')} (${batch.fieldName})`,
+                                      isLoading: false,
+                                    });
+                                  }}
+                                  title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                  className="w-8 h-8 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 flex items-center justify-center transition-colors cursor-pointer"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setEditingBatch(batch);
+                                    setIsBatchModalOpen(true);
+                                  }}
+                                  title={lang === 'es' ? 'Editar lote' : 'Edit batch'}
+                                  className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-lime-500 hover:border-lime-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setDeleteModalState({
+                                      isOpen: true,
+                                      type: 'batch',
+                                      id: batch.batchId || 0,
+                                      name: `Lote LOT-${String(batch.batchId).padStart(4, '0')} (${batch.fieldName})`,
+                                      isLoading: false,
+                                    });
+                                  }}
+                                  title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                  className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/40 flex items-center justify-center transition-colors cursor-pointer"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -752,29 +979,60 @@ export default function LotesPage() {
                       </td>
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingInventory(item);
-                              setIsInventoryModalOpen(true);
-                            }}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-emerald-500 flex items-center justify-center cursor-pointer"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setDeleteModalState({
-                                isOpen: true,
-                                type: 'inventory',
-                                id: item.id || '',
-                                name: `Item ${item.id}`,
-                                isLoading: false,
-                              });
-                            }}
-                            className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 flex items-center justify-center cursor-pointer"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {item.isActive === false || item.isDeleted === true ? (
+                            <>
+                              <button
+                                onClick={() => handleRestoreInventory(item)}
+                                title={lang === 'es' ? 'Restaurar existencias' : 'Restore inventory balance'}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                              >
+                                <RotateCcw size={13} />
+                                <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteModalState({
+                                    isOpen: true,
+                                    type: 'inventory',
+                                    id: item.id || '',
+                                    name: `Item ${item.id}`,
+                                    isLoading: false,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                className="w-8 h-8 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 flex items-center justify-center cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingInventory(item);
+                                  setIsInventoryModalOpen(true);
+                                }}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-emerald-500 flex items-center justify-center cursor-pointer"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteModalState({
+                                    isOpen: true,
+                                    type: 'inventory',
+                                    id: item.id || '',
+                                    name: `Item ${item.id}`,
+                                    isLoading: false,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                className="w-8 h-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] text-[var(--text-secondary)] hover:text-red-500 flex items-center justify-center cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -879,23 +1137,40 @@ export default function LotesPage() {
         title={
           deleteModalState.type === 'batch'
             ? lang === 'es'
-              ? '¿Eliminar Lote de Cosecha?'
-              : 'Delete Harvest Batch?'
+              ? filterTrash === 'trash'
+                ? '¿Eliminar Lote Definitivamente?'
+                : '¿Mover Lote a la Papelera?'
+              : filterTrash === 'trash'
+              ? 'Permanently Delete Batch?'
+              : 'Move Batch to Trash?'
             : lang === 'es'
-            ? '¿Eliminar Registro de Stock?'
-            : 'Delete Inventory Record?'
+            ? filterTrash === 'trash'
+              ? '¿Eliminar Registro Definitivamente?'
+              : '¿Mover Stock a la Papelera?'
+            : filterTrash === 'trash'
+            ? 'Permanently Delete Inventory?'
+            : 'Move Inventory to Trash?'
         }
         message={
           deleteModalState.type === 'batch'
             ? lang === 'es'
-              ? 'Esta acción eliminará el lote de SQL Server y su historial de inspección en MongoDB.'
-              : 'This will delete the batch from SQL Server and its inspection history in MongoDB.'
+              ? filterTrash === 'trash'
+                ? 'Esta acción eliminará permanentemente el lote de SQL Server y MongoDB. No se podrá recuperar.'
+                : 'El lote se marcará como anulado y se moverá a la papelera. Podrás restaurarlo en cualquier momento.'
+              : filterTrash === 'trash'
+              ? 'This will permanently destroy the batch and inspections. It cannot be recovered.'
+              : 'The batch will be marked inactive and moved to trash. You can restore it anytime.'
             : lang === 'es'
-              ? 'Se eliminará el saldo en cámara frigorífica de la base de datos.'
-              : 'This inventory balance will be permanently deleted.'
+            ? filterTrash === 'trash'
+              ? 'Se eliminará permanentemente el saldo en cámara frigorífica.'
+              : 'El stock se moverá a la papelera. Podrás restaurarlo en cualquier momento.'
+            : filterTrash === 'trash'
+            ? 'This inventory balance will be permanently deleted.'
+            : 'The balance will be moved to trash and can be restored.'
         }
         itemName={deleteModalState.name}
         isLoading={deleteModalState.isLoading}
+        isSoftDelete={filterTrash !== 'trash'}
         lang={lang}
         onConfirm={
           deleteModalState.type === 'batch'

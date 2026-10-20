@@ -21,7 +21,9 @@ import {
   Layers,
   AlertCircle,
   Clock,
-  Building2
+  Building2,
+  BarChart3,
+  ArrowRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
@@ -442,6 +444,33 @@ export default function Login() {
                     )}
                   </p>
                 </div>
+
+                {/* ── BOTÓN ACCESO DIRECTO AL DASHBOARD ANALÍTICO (SIN INICIAR SESIÓN) ── */}
+                <button
+                  type="button"
+                  onClick={() => navigate('/analitica')}
+                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-blue-500/10 border border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/15 transition-all text-left group cursor-pointer shadow-sm hover:shadow-md"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/25 group-hover:scale-105 transition-transform shrink-0">
+                      <BarChart3 size={20} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[var(--text-primary)]">
+                          Dashboard Analítico en Vivo
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 uppercase tracking-wider">
+                          Sin Login
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[var(--text-secondary)] truncate">
+                        Acceso para Trabajadores & Admin • Métricas de Planta y Ventas
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight size={17} className="text-cyan-500 group-hover:translate-x-1 transition-transform shrink-0 ml-2" />
+                </button>
 
                 {/* Botón Oficial de Google OAuth 2.0 */}
                 <div className="space-y-2">

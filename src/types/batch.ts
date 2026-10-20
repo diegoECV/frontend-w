@@ -17,6 +17,9 @@ export interface Batch {
   productionDate?: string | null;
   expirationDate?: string | null;
   inspections?: InspectionEvent[] | null;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
+  status?: string | null;
 }
 
 export interface InventoryBatch {
@@ -29,6 +32,9 @@ export interface InventoryBatch {
   packingDate?: string | null;
   expirationDate?: string | null;
   quantity: number;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
+  status?: string | null;
 }
 
 export interface QualityInspection {

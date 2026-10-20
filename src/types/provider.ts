@@ -22,4 +22,6 @@ export interface Provider {
   ubigeo?: string | null;
   bankAccountCci?: string | null;
   certificationStatus?: ProviderCertification | string | null;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
 }

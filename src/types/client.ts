@@ -27,4 +27,6 @@ export interface Client {
   preferredCurrency?: Currency | string | null;
   creditLimit?: number | null;
   language?: string | null;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
 }

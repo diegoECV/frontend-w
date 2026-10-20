@@ -16,12 +16,21 @@ import {
   Shield,
   ChevronDown,
   Clock,
+  Mail,
+  CheckCheck,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../hooks/useTheme';
 import { ProfileModal } from '../profile/ProfileModal';
 import { SettingsModal } from '../profile/SettingsModal';
 import { SecurityModal } from '../profile/SecurityModal';
+import {
+  getLocalNotifications,
+  markAllNotificationsAsRead,
+  clearNotificationsHistory,
+  type SystemNotificationItem,
+} from '../../services/notificationService';
 
 interface TopbarProps {
   lang: 'es' | 'en';
@@ -40,6 +49,19 @@ export default function Topbar({ lang, onToggleLang }: TopbarProps) {
   const [isSecurityOpen, setIsSecurityOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  const [systemNotifications, setSystemNotifications] = useState<SystemNotificationItem[]>(() =>
+    getLocalNotifications()
+  );
+
+  // Sincroniza notificaciones operativas locales en tiempo real
+  useEffect(() => {
+    const handleUpdate = () => {
+      setSystemNotifications(getLocalNotifications());
+    };
+    window.addEventListener('visons_notifications_updated', handleUpdate);
+    return () => window.removeEventListener('visons_notifications_updated', handleUpdate);
+  }, []);
 
   // Cierra los dropdowns al hacer click fuera
   useEffect(() => {
@@ -65,7 +87,27 @@ export default function Topbar({ lang, onToggleLang }: TopbarProps) {
     navigate('/login');
   };
 
-  const totalNotifications = pendingRequestsCount;
+  const unreadSystemCount = systemNotifications.filter((n) => !n.read).length;
+  const totalNotifications = pendingRequestsCount + unreadSystemCount;
+
+  const getModuleBadgeClass = (module: string) => {
+    switch (module) {
+      case 'PRODUCTOS':
+        return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+      case 'CLIENTES':
+        return 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20';
+      case 'LOTES':
+        return 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+      case 'EMBARQUES':
+        return 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20';
+      case 'FINANZAS':
+        return 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20';
+      case 'USUARIOS':
+        return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
+      default:
+        return 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20';
+    }
+  };
 
   return (
     <header className="h-16 px-5 flex items-center justify-between bg-[var(--header-bg)] border-b border-[var(--border-subtle)] shrink-0 z-40">
@@ -125,46 +167,126 @@ export default function Topbar({ lang, onToggleLang }: TopbarProps) {
 
           {/* Dropdown de Notificaciones */}
           {notifOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-xl shadow-black/10 z-50 overflow-hidden">
-              <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
-                <span className="text-xs font-bold text-[var(--text-primary)]">
-                  {lang === 'es' ? 'Notificaciones' : 'Notifications'}
-                </span>
-                {totalNotifications > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
-                    {totalNotifications}
+            <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-2xl shadow-black/20 z-50 overflow-hidden flex flex-col max-h-[85vh]">
+              {/* Encabezado del dropdown */}
+              <div className="px-4 py-3 border-b border-[var(--border-subtle)] flex items-center justify-between bg-[var(--surface-subtle)] shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[var(--text-primary)]">
+                    {lang === 'es' ? 'Notificaciones del Sistema' : 'System Notifications'}
                   </span>
+                  {totalNotifications > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                      {totalNotifications}
+                    </span>
+                  )}
+                </div>
+
+                {systemNotifications.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => markAllNotificationsAsRead()}
+                      title={lang === 'es' ? 'Marcar todas como leídas' : 'Mark all as read'}
+                      className="p-1 rounded-lg text-[var(--text-hint)] hover:text-blue-500 hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+                    >
+                      <CheckCheck size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => clearNotificationsHistory()}
+                      title={lang === 'es' ? 'Limpiar historial' : 'Clear history'}
+                      className="p-1 rounded-lg text-[var(--text-hint)] hover:text-rose-500 hover:bg-[var(--surface-hover)] transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 )}
               </div>
 
-              {pendingRequestsCount > 0 ? (
-                <div className="p-3">
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 hover:bg-amber-500/12 transition-colors cursor-pointer"
-                    onClick={() => { navigate('/clientes'); setNotifOpen(false); }}>
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0">
-                      <Clock size={16} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-[var(--text-primary)]">
-                        {lang === 'es'
-                          ? `${pendingRequestsCount} solicitud${pendingRequestsCount > 1 ? 'es' : ''} B2B pendiente${pendingRequestsCount > 1 ? 's' : ''}`
-                          : `${pendingRequestsCount} pending B2B request${pendingRequestsCount > 1 ? 's' : ''}`
-                        }
-                      </p>
-                      <p className="text-[11px] text-[var(--text-hint)] mt-0.5">
-                        {lang === 'es'
-                          ? 'Requieren revisión y aprobación'
-                          : 'Require your review and approval'
-                        }
-                      </p>
+              {/* Contenido con scroll */}
+              <div className="overflow-y-auto divide-y divide-[var(--border-subtle)] flex-1 max-h-[380px]">
+                {/* 1. Alertas de Solicitudes B2B Pendientes */}
+                {pendingRequestsCount > 0 && (
+                  <div className="p-3 bg-amber-500/5">
+                    <div
+                      className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/15 transition-colors cursor-pointer"
+                      onClick={() => {
+                        navigate('/clientes');
+                        setNotifOpen(false);
+                      }}
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                        <Clock size={16} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-[var(--text-primary)]">
+                          {lang === 'es'
+                            ? `${pendingRequestsCount} solicitud${pendingRequestsCount > 1 ? 'es' : ''} B2B pendiente${pendingRequestsCount > 1 ? 's' : ''}`
+                            : `${pendingRequestsCount} pending B2B request${pendingRequestsCount > 1 ? 's' : ''}`}
+                        </p>
+                        <p className="text-[11px] text-[var(--text-hint)] mt-0.5">
+                          {lang === 'es'
+                            ? 'Requieren revisión y aprobación en el directorio'
+                            : 'Require review and approval in directory'}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="px-4 py-6 text-center text-xs text-[var(--text-hint)]">
-                  {lang === 'es' ? 'No hay notificaciones nuevas' : 'No new notifications'}
-                </div>
-              )}
+                )}
+
+                {/* 2. Lista de Notificaciones Operativas en Tiempo Real */}
+                {systemNotifications.length > 0 ? (
+                  systemNotifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      className={`p-3.5 hover:bg-[var(--surface-hover)] transition-colors ${
+                        !notif.read ? 'bg-blue-500/5' : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase border ${getModuleBadgeClass(
+                              notif.module
+                            )}`}
+                          >
+                            {notif.module}
+                          </span>
+                          <span className="text-[10px] font-bold text-[var(--text-primary)]">
+                            {notif.actionType}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-[var(--text-hint)]">{notif.timestamp}</span>
+                      </div>
+
+                      <p className="text-xs font-semibold text-[var(--text-primary)] line-clamp-1">
+                        {notif.entityName}
+                      </p>
+                      <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 line-clamp-2 leading-relaxed">
+                        {notif.details}
+                      </p>
+
+                      <div className="flex items-center justify-between mt-2 pt-1 text-[10px] text-[var(--text-hint)]">
+                        <span>👤 {notif.user}</span>
+                        {notif.emailSent && (
+                          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                            <Mail size={10} /> Correo despachado
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  pendingRequestsCount === 0 && (
+                    <div className="px-4 py-8 text-center text-xs text-[var(--text-hint)]">
+                      <Bell size={24} className="mx-auto mb-2 opacity-30" />
+                      {lang === 'es'
+                        ? 'No hay notificaciones ni actualizaciones recientes'
+                        : 'No recent updates or notifications'}
+                    </div>
+                  )
+                )}
+              </div>
             </div>
           )}
         </div>

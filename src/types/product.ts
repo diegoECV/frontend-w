@@ -4,6 +4,7 @@ export interface Product {
   name: string;
   categoryId?: string | null;
   isActive?: boolean | null;
+  isDeleted?: boolean | null;
   variety?: string | null;
   caliber?: string | null;
   unitMeasure?: string | null;

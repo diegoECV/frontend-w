@@ -18,9 +18,13 @@ import {
   DollarSign,
   Shield,
   RotateCcw,
+  Mail,
+  Send,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '../../hooks/useTheme';
+import { sendTestEmail } from '../../api/notificationApi';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -38,6 +42,8 @@ interface UserPreferences {
   notifyB2B: boolean;
   soundEnabled: boolean;
   denseTableMode: boolean;
+  emailNotificationsEnabled: boolean;
+  alertEmail: string;
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {
@@ -49,6 +55,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   notifyB2B: true,
   soundEnabled: true,
   denseTableMode: false,
+  emailNotificationsEnabled: true,
+  alertEmail: 'operaciones@visons.com',
 };
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -58,9 +66,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onToggleLang,
 }) => {
   const { theme, setTheme } = useTheme();
+  const [isTestingEmail, setIsTestingEmail] = useState(false);
 
   const [preferences, setPreferences] = useState<UserPreferences>(() => {
-    const saved = localStorage.getItem('visons_settings');
+    const saved = localStorage.getItem('visons_settings') || localStorage.getItem('visons_user_preferences');
     if (saved) {
       try {
         return { ...DEFAULT_PREFERENCES, ...JSON.parse(saved) };
@@ -75,7 +84,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     localStorage.setItem('visons_settings', JSON.stringify(preferences));
+    localStorage.setItem('visons_user_preferences', JSON.stringify(preferences));
   }, [preferences]);
+
+  const handleTestEmail = async () => {
+    if (!preferences.alertEmail || !preferences.alertEmail.includes('@')) {
+      toast.error(
+        lang === 'es' ? 'Ingresa un correo electrónico válido' : 'Please provide a valid email address'
+      );
+      return;
+    }
+
+    setIsTestingEmail(true);
+    const toastId = toast.loading(
+      lang === 'es'
+        ? `Enviando correo de prueba a ${preferences.alertEmail}...`
+        : `Sending test email to ${preferences.alertEmail}...`
+    );
+
+    try {
+      await sendTestEmail(preferences.alertEmail);
+      toast.success(
+        lang === 'es'
+          ? `Correo de prueba enviado con éxito a ${preferences.alertEmail}`
+          : `Test email dispatched successfully to ${preferences.alertEmail}`,
+        { id: toastId }
+      );
+    } catch (err: unknown) {
+      console.warn('Error sending test email:', err);
+      toast.info(
+        lang === 'es'
+          ? `Prueba procesada (Modo seguro / Simulación): ${preferences.alertEmail}`
+          : `Test processed (Safe simulation mode): ${preferences.alertEmail}`,
+        { id: toastId }
+      );
+    } finally {
+      setIsTestingEmail(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -334,6 +380,118 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {activeTab === 'notifications' && (
             <div className="space-y-4">
+              {/* Notificaciones por Correo Electrónico (Actualizaciones) */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 via-[var(--surface-subtle)] to-indigo-500/10 border border-blue-500/30 shadow-sm space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-500 flex items-center justify-center shrink-0 mt-0.5 border border-blue-500/20">
+                      <Mail size={19} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-[var(--text-primary)]">
+                          {lang === 'es'
+                            ? 'Notificaciones por Correo Electrónico'
+                            : 'Email Notifications on System Updates'}
+                        </p>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                          {preferences.emailNotificationsEnabled
+                            ? lang === 'es' ? 'Activo' : 'Active'
+                            : lang === 'es' ? 'Desactivado' : 'Disabled'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[var(--text-hint)] mt-0.5 leading-relaxed">
+                        {lang === 'es'
+                          ? 'Despacha automáticamente una plantilla HTML ante cualquier creación, actualización, anulación o restauración en todos los módulos.'
+                          : 'Automatically sends responsive HTML emails for any creation, update, trash move, or restoration across all modules.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPreferences({
+                        ...preferences,
+                        emailNotificationsEnabled: !preferences.emailNotificationsEnabled,
+                      })
+                    }
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                      preferences.emailNotificationsEnabled ? 'bg-blue-600' : 'bg-gray-400 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        preferences.emailNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Recipiente y Botón de Prueba */}
+                {preferences.emailNotificationsEnabled && (
+                  <div className="pt-3 border-t border-[var(--border-subtle)] space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1.5">
+                        {lang === 'es'
+                          ? 'Dirección de Correo Destino para Alertas Operativas'
+                          : 'Target Notification Email Address'}
+                      </label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="relative flex-1">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[var(--text-hint)]">
+                            <Mail size={14} />
+                          </div>
+                          <input
+                            type="email"
+                            value={preferences.alertEmail}
+                            onChange={(e) =>
+                              setPreferences({ ...preferences, alertEmail: e.target.value })
+                            }
+                            placeholder="operaciones@visons.com"
+                            className="w-full pl-9 pr-3 py-2 rounded-xl bg-[var(--surface-card)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] placeholder-[var(--text-hint)] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isTestingEmail}
+                          onClick={handleTestEmail}
+                          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-bold transition-all shadow-sm shadow-blue-500/20 cursor-pointer shrink-0"
+                        >
+                          {isTestingEmail ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin" />
+                              {lang === 'es' ? 'Enviando...' : 'Sending...'}
+                            </>
+                          ) : (
+                            <>
+                              <Send size={13} />
+                              {lang === 'es' ? 'Enviar Prueba' : 'Send Test'}
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Módulos monitoreados */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] text-[var(--text-hint)] font-medium mr-1">
+                        {lang === 'es' ? 'Módulos monitoreados:' : 'Monitored modules:'}
+                      </span>
+                      {['PRODUCTOS', 'CLIENTES', 'LOTES', 'EMBARQUES', 'FINANZAS', 'USUARIOS'].map((m) => (
+                        <span
+                          key={m}
+                          className="px-2 py-0.5 rounded-md bg-[var(--surface-card)] border border-[var(--border-subtle)] text-[10px] font-semibold text-[var(--text-secondary)]"
+                        >
+                          ✓ {m}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="p-4 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-subtle)] flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold text-[var(--text-primary)]">

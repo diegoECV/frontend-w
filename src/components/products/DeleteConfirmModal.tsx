@@ -6,6 +6,8 @@ interface DeleteConfirmModalProps {
   message: string;
   itemName: string;
   isLoading?: boolean;
+  isSoftDelete?: boolean;
+  confirmButtonText?: string;
   lang: 'es' | 'en';
   onConfirm: () => void;
   onCancel: () => void;
@@ -17,6 +19,8 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   message,
   itemName,
   isLoading = false,
+  isSoftDelete = true,
+  confirmButtonText,
   lang,
   onConfirm,
   onCancel,
@@ -28,7 +32,11 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
       <div className="relative w-full max-w-md bg-[var(--surface-card)] border border-[var(--border-subtle)] rounded-2xl shadow-2xl overflow-hidden p-6 text-left">
         {/* Header Icon */}
         <div className="flex items-center gap-4 mb-4">
-          <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center shrink-0">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 border ${
+            isSoftDelete
+              ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+              : 'bg-red-500/10 border-red-500/20 text-red-500'
+          }`}>
             <AlertTriangle size={24} />
           </div>
           <div>
@@ -36,7 +44,13 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
               {title}
             </h3>
             <p className="text-xs text-[var(--text-secondary)]">
-              {lang === 'es' ? 'Esta acción es irreversible' : 'This action cannot be undone'}
+              {isSoftDelete
+                ? lang === 'es'
+                  ? 'Podrás restaurar este registro desde la Papelera'
+                  : 'You can restore this record anytime from Trash'
+                : lang === 'es'
+                ? 'Esta acción es irreversible'
+                : 'This action cannot be undone'}
             </p>
           </div>
         </div>
@@ -46,7 +60,11 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
           <p className="text-sm text-[var(--text-secondary)]">
             {message}
           </p>
-          <div className="p-3 rounded-xl bg-red-500/5 border border-red-500/20 text-sm font-semibold text-red-400 break-all">
+          <div className={`p-3 rounded-xl text-sm font-semibold break-all border ${
+            isSoftDelete
+              ? 'bg-amber-500/5 border-amber-500/20 text-amber-400'
+              : 'bg-red-500/5 border-red-500/20 text-red-400'
+          }`}>
             {itemName}
           </div>
         </div>
@@ -65,10 +83,16 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
             type="button"
             onClick={onConfirm}
             disabled={isLoading}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold shadow-lg shadow-red-600/20 transition-all disabled:opacity-50 cursor-pointer"
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold shadow-lg transition-all disabled:opacity-50 cursor-pointer ${
+              isSoftDelete
+                ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                : 'bg-red-600 hover:bg-red-700 shadow-red-600/20'
+            }`}
           >
             {isLoading && <Loader2 size={16} className="animate-spin" />}
-            {lang === 'es' ? 'Eliminar Definitivamente' : 'Delete Permanently'}
+            {confirmButtonText || (isSoftDelete
+              ? lang === 'es' ? 'Mover a Papelera' : 'Move to Trash'
+              : lang === 'es' ? 'Eliminar Definitivamente' : 'Delete Permanently')}
           </button>
         </div>
       </div>

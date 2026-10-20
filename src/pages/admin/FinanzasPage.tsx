@@ -24,6 +24,8 @@ import {
   ShieldCheck,
   Calendar,
   TrendingUp,
+  RotateCcw,
+  Archive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -54,6 +56,8 @@ import { PaymentModal } from '../../components/finance/PaymentModal';
 import { PriceListModal } from '../../components/finance/PriceListModal';
 import { SunatCdrModal } from '../../components/finance/SunatCdrModal';
 import { DeleteConfirmModal } from '../../components/products/DeleteConfirmModal';
+import { StatusFilterTabs, type FilterTrashStatus } from '../../components/shared/StatusFilterTabs';
+import { notifyOperationUpdate } from '../../services/notificationService';
 
 type OutletCtx = { lang: 'es' | 'en' };
 type TabType = 'invoices' | 'payments' | 'pricelists';
@@ -63,6 +67,7 @@ export default function FinanzasPage() {
 
   // Tab State
   const [activeTab, setActiveTab] = useState<TabType>('invoices');
+  const [filterTrash, setFilterTrash] = useState<FilterTrashStatus>('active');
 
   // Core Data States
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -137,6 +142,25 @@ export default function FinanzasPage() {
     return map;
   }, [orders]);
 
+  // Trash Counts
+  const invoiceTrashCounts = useMemo(() => {
+    const active = invoices.filter((i) => !(i.isDeleted === true || i.status === 'CANCELLED' || i.status === 'ANULADA' || i.isActive === false)).length;
+    const trash = invoices.filter((i) => i.isDeleted === true || i.status === 'CANCELLED' || i.status === 'ANULADA' || i.isActive === false).length;
+    return { active, trash, all: invoices.length };
+  }, [invoices]);
+
+  const paymentTrashCounts = useMemo(() => {
+    const active = payments.filter((p) => !(p.isDeleted === true || p.isActive === false)).length;
+    const trash = payments.filter((p) => p.isDeleted === true || p.isActive === false).length;
+    return { active, trash, all: payments.length };
+  }, [payments]);
+
+  const priceListTrashCounts = useMemo(() => {
+    const active = priceLists.filter((pl) => !(pl.isDeleted === true || pl.isActive === false)).length;
+    const trash = priceLists.filter((pl) => pl.isDeleted === true || pl.isActive === false).length;
+    return { active, trash, all: priceLists.length };
+  }, [priceLists]);
+
   // Filtered Invoices
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
@@ -146,12 +170,18 @@ export default function FinanzasPage() {
         (order?.orderCode || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (order?.clientId || '').toLowerCase().includes(searchTerm.toLowerCase());
 
+      const isItemDeleted = inv.isDeleted === true || inv.status === 'CANCELLED' || inv.status === 'ANULADA' || inv.isActive === false;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
       const matchesStatus = statusFilter === 'ALL' || inv.status === statusFilter;
       const matchesCdr = cdrFilter === 'ALL' || (inv.sunatCdrStatus || 'ACEPTADO') === cdrFilter;
 
-      return matchesSearch && matchesStatus && matchesCdr;
+      return matchesSearch && matchesTrash && matchesStatus && matchesCdr;
     });
-  }, [invoices, orderMap, searchTerm, statusFilter, cdrFilter]);
+  }, [invoices, orderMap, searchTerm, filterTrash, statusFilter, cdrFilter]);
 
   // Filtered Payments
   const filteredPayments = useMemo(() => {
@@ -162,11 +192,34 @@ export default function FinanzasPage() {
         (p.paymentMethod || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (order?.orderCode || '').toLowerCase().includes(searchTerm.toLowerCase());
 
+      const isItemDeleted = p.isDeleted === true || p.isActive === false;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
       const matchesMethod = statusFilter === 'ALL' || p.paymentMethod === statusFilter;
 
-      return matchesSearch && matchesMethod;
+      return matchesSearch && matchesTrash && matchesMethod;
     });
-  }, [payments, orderMap, searchTerm, statusFilter]);
+  }, [payments, orderMap, searchTerm, filterTrash, statusFilter]);
+
+  // Filtered Price Lists
+  const filteredPriceLists = useMemo(() => {
+    return priceLists.filter((pl) => {
+      const matchesSearch =
+        !searchTerm.trim() ||
+        (pl.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+
+      const isItemDeleted = pl.isDeleted === true || pl.isActive === false;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
+      return matchesSearch && matchesTrash;
+    });
+  }, [priceLists, searchTerm, filterTrash]);
 
   // Financial KPIs
   const totalInvoicedUSD = useMemo(() => {
@@ -198,6 +251,13 @@ export default function FinanzasPage() {
             ? `Factura ${data.invoiceNumber} actualizada correctamente`
             : `Invoice ${data.invoiceNumber} updated successfully`
         );
+        notifyOperationUpdate({
+          module: 'FINANZAS',
+          actionType: 'ACTUALIZACIÓN',
+          entityName: `Factura ${data.invoiceNumber || editingInvoice.invoiceNumber}`,
+          details: `Factura ${data.invoiceNumber || editingInvoice.invoiceNumber} actualizada. Monto: $${data.total || editingInvoice.total} ${data.currency || editingInvoice.currency || 'USD'}.`,
+          link: '/finanzas',
+        });
       } else {
         await createInvoice(data);
         toast.success(
@@ -205,6 +265,13 @@ export default function FinanzasPage() {
             ? `Factura ${data.invoiceNumber} emitida con éxito`
             : `Invoice ${data.invoiceNumber} issued successfully`
         );
+        notifyOperationUpdate({
+          module: 'FINANZAS',
+          actionType: 'CREACIÓN',
+          entityName: `Factura ${data.invoiceNumber}`,
+          details: `Nueva factura comercial de exportación emitida: ${data.invoiceNumber} por $${data.total || 0} ${data.currency || 'USD'}.`,
+          link: '/finanzas',
+        });
       }
       setIsInvoiceModalOpen(false);
       setEditingInvoice(null);
@@ -234,6 +301,13 @@ export default function FinanzasPage() {
             ? `Pago ${data.referenceCode} actualizado con éxito`
             : `Payment ${data.referenceCode} updated successfully`
         );
+        notifyOperationUpdate({
+          module: 'FINANZAS',
+          actionType: 'ACTUALIZACIÓN',
+          entityName: `Abono ${data.referenceCode || editingPayment.referenceCode}`,
+          details: `Abono ${data.referenceCode || editingPayment.referenceCode} actualizado. Monto: $${data.amount || editingPayment.amount} USD.`,
+          link: '/finanzas',
+        });
       } else {
         await createPayment(data);
         toast.success(
@@ -241,6 +315,13 @@ export default function FinanzasPage() {
             ? `Pago ${data.referenceCode} registrado con éxito`
             : `Payment ${data.referenceCode} registered successfully`
         );
+        notifyOperationUpdate({
+          module: 'FINANZAS',
+          actionType: 'CREACIÓN',
+          entityName: `Abono ${data.referenceCode}`,
+          details: `Nuevo pago B2B registrado: ${data.referenceCode} por $${data.amount || 0} USD.`,
+          link: '/finanzas',
+        });
       }
       setIsPaymentModalOpen(false);
       setEditingPayment(null);
@@ -270,6 +351,13 @@ export default function FinanzasPage() {
             ? `Tarifario ${data.name} actualizado`
             : `Price list ${data.name} updated`
         );
+        notifyOperationUpdate({
+          module: 'FINANZAS',
+          actionType: 'ACTUALIZACIÓN',
+          entityName: `Tarifario ${data.name || editingPriceList.name}`,
+          details: `Tarifario estacional "${data.name || editingPriceList.name}" actualizado en catálogo de precios.`,
+          link: '/finanzas',
+        });
       } else {
         await createPriceList(data);
         toast.success(
@@ -277,6 +365,13 @@ export default function FinanzasPage() {
             ? `Tarifario ${data.name} registrado en MongoDB`
             : `Price list ${data.name} registered in MongoDB`
         );
+        notifyOperationUpdate({
+          module: 'FINANZAS',
+          actionType: 'CREACIÓN',
+          entityName: `Tarifario ${data.name}`,
+          details: `Nuevo tarifario estacional de exportación registrado: "${data.name}" (${data.currency || 'USD'}).`,
+          link: '/finanzas',
+        });
       }
       setIsPriceListModalOpen(false);
       setEditingPriceList(null);
@@ -295,29 +390,188 @@ export default function FinanzasPage() {
     }
   };
 
+  // RESTAURAR FACTURA
+  const handleRestoreInvoice = async (inv: Invoice) => {
+    if (!inv.invoiceId) return;
+    try {
+      await updateInvoice(inv.invoiceId, { ...inv, status: 'UNPAID', isDeleted: false, isActive: true });
+      setInvoices((prev) =>
+        prev.map((i) => (i.invoiceId === inv.invoiceId ? { ...i, status: 'UNPAID', isDeleted: false, isActive: true } : i))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Factura ${inv.invoiceNumber} restaurada exitosamente a cuentas activas`
+          : `Invoice ${inv.invoiceNumber} restored successfully`
+      );
+      notifyOperationUpdate({
+        module: 'FINANZAS',
+        actionType: 'RESTAURACIÓN',
+        entityName: `Factura ${inv.invoiceNumber}`,
+        details: `Factura comercial ${inv.invoiceNumber} restaurada a cuentas activas.`,
+        link: '/finanzas',
+      });
+    } catch (err) {
+      console.error('Error restoring invoice:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar factura' : 'Failed to restore invoice');
+    }
+  };
+
+  // RESTAURAR PAGO
+  const handleRestorePayment = async (p: Payment) => {
+    if (!p.paymentId) return;
+    try {
+      await updatePayment(p.paymentId, { ...p, isDeleted: false, isActive: true });
+      setPayments((prev) =>
+        prev.map((pay) => (pay.paymentId === p.paymentId ? { ...pay, isDeleted: false, isActive: true } : pay))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Abono ${p.referenceCode} restaurado con éxito a la conciliación`
+          : `Payment ${p.referenceCode} restored successfully`
+      );
+      notifyOperationUpdate({
+        module: 'FINANZAS',
+        actionType: 'RESTAURACIÓN',
+        entityName: `Abono ${p.referenceCode}`,
+        details: `Abono bancario ${p.referenceCode} restaurado a la conciliación.`,
+        link: '/finanzas',
+      });
+    } catch (err) {
+      console.error('Error restoring payment:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar pago' : 'Failed to restore payment');
+    }
+  };
+
+  // RESTAURAR TARIFARIO
+  const handleRestorePriceList = async (pl: PriceList) => {
+    if (!pl.id) return;
+    try {
+      await updatePriceList(pl.id, { ...pl, isDeleted: false, isActive: true });
+      setPriceLists((prev) =>
+        prev.map((item) => (item.id === pl.id ? { ...item, isDeleted: false, isActive: true } : item))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Tarifario ${pl.name} restaurado con éxito`
+          : `Price list ${pl.name} restored successfully`
+      );
+      notifyOperationUpdate({
+        module: 'FINANZAS',
+        actionType: 'RESTAURACIÓN',
+        entityName: `Tarifario ${pl.name}`,
+        details: `Tarifario "${pl.name}" restaurado al catálogo activo.`,
+        link: '/finanzas',
+      });
+    } catch (err) {
+      console.error('Error restoring price list:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar tarifario' : 'Failed to restore price list');
+    }
+  };
+
   // Confirm Delete
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     setIsSubmitting(true);
     try {
-      if (deleteTarget.type === 'invoice') {
-        await deleteInvoice(Number(deleteTarget.id));
-        toast.success(lang === 'es' ? 'Factura eliminada permanentemente' : 'Invoice deleted permanently');
-      } else if (deleteTarget.type === 'payment') {
-        await deletePayment(Number(deleteTarget.id));
-        toast.success(lang === 'es' ? 'Registro de pago eliminado' : 'Payment record deleted');
+      if (filterTrash === 'trash') {
+        if (deleteTarget.type === 'invoice') {
+          await deleteInvoice(Number(deleteTarget.id));
+          setInvoices((prev) => prev.filter((i) => i.invoiceId !== Number(deleteTarget.id)));
+          toast.success(lang === 'es' ? 'Factura eliminada permanentemente' : 'Invoice deleted permanently');
+          notifyOperationUpdate({
+            module: 'FINANZAS',
+            actionType: 'PAPELERA',
+            entityName: `Factura ${deleteTarget.name}`,
+            details: `Factura ${deleteTarget.name} eliminada definitivamente de SQL Server.`,
+            link: '/finanzas',
+          });
+        } else if (deleteTarget.type === 'payment') {
+          await deletePayment(Number(deleteTarget.id));
+          setPayments((prev) => prev.filter((p) => p.paymentId !== Number(deleteTarget.id)));
+          toast.success(lang === 'es' ? 'Registro de pago eliminado definitivamente' : 'Payment record deleted permanently');
+          notifyOperationUpdate({
+            module: 'FINANZAS',
+            actionType: 'PAPELERA',
+            entityName: `Abono ${deleteTarget.name}`,
+            details: `Registro de pago ${deleteTarget.name} eliminado definitivamente.`,
+            link: '/finanzas',
+          });
+        } else {
+          await deletePriceList(String(deleteTarget.id));
+          setPriceLists((prev) => prev.filter((pl) => pl.id !== String(deleteTarget.id)));
+          toast.success(lang === 'es' ? 'Tarifario eliminado definitivamente' : 'Price list deleted permanently');
+          notifyOperationUpdate({
+            module: 'FINANZAS',
+            actionType: 'PAPELERA',
+            entityName: `Tarifario ${deleteTarget.name}`,
+            details: `Tarifario ${deleteTarget.name} purgado definitivamente de MongoDB.`,
+            link: '/finanzas',
+          });
+        }
       } else {
-        await deletePriceList(String(deleteTarget.id));
-        toast.success(lang === 'es' ? 'Tarifario eliminado' : 'Price list deleted');
+        if (deleteTarget.type === 'invoice') {
+          const target = invoices.find((i) => i.invoiceId === Number(deleteTarget.id));
+          await updateInvoice(Number(deleteTarget.id), { ...target, status: 'CANCELLED', isDeleted: true, isActive: false });
+          setInvoices((prev) =>
+            prev.map((i) => (i.invoiceId === Number(deleteTarget.id) ? { ...i, status: 'CANCELLED', isDeleted: true, isActive: false } : i))
+          );
+          toast.success(
+            lang === 'es'
+              ? `Factura ${deleteTarget.name} enviada a la papelera (anulada lógicamente)`
+              : `Invoice ${deleteTarget.name} moved to trash (soft deleted)`
+          );
+          notifyOperationUpdate({
+            module: 'FINANZAS',
+            actionType: 'PAPELERA',
+            entityName: `Factura ${deleteTarget.name}`,
+            details: `Factura ${deleteTarget.name} enviada a la papelera (anulada).`,
+            link: '/finanzas',
+          });
+        } else if (deleteTarget.type === 'payment') {
+          const target = payments.find((p) => p.paymentId === Number(deleteTarget.id));
+          await updatePayment(Number(deleteTarget.id), { ...target, isDeleted: true, isActive: false });
+          setPayments((prev) =>
+            prev.map((p) => (p.paymentId === Number(deleteTarget.id) ? { ...p, isDeleted: true, isActive: false } : p))
+          );
+          toast.success(
+            lang === 'es'
+              ? `Abono ${deleteTarget.name} enviado a la papelera`
+              : `Payment ${deleteTarget.name} moved to trash`
+          );
+          notifyOperationUpdate({
+            module: 'FINANZAS',
+            actionType: 'PAPELERA',
+            entityName: `Abono ${deleteTarget.name}`,
+            details: `Registro de pago ${deleteTarget.name} movido a la papelera.`,
+            link: '/finanzas',
+          });
+        } else {
+          const target = priceLists.find((pl) => pl.id === String(deleteTarget.id));
+          await updatePriceList(String(deleteTarget.id), { ...target, isDeleted: true, isActive: false });
+          setPriceLists((prev) =>
+            prev.map((pl) => (pl.id === String(deleteTarget.id) ? { ...pl, isDeleted: true, isActive: false } : pl))
+          );
+          toast.success(
+            lang === 'es'
+              ? `Tarifario ${deleteTarget.name} enviado a la papelera`
+              : `Price list ${deleteTarget.name} moved to trash`
+          );
+          notifyOperationUpdate({
+            module: 'FINANZAS',
+            actionType: 'PAPELERA',
+            entityName: `Tarifario ${deleteTarget.name}`,
+            details: `Tarifario ${deleteTarget.name} trasladado a la papelera.`,
+            link: '/finanzas',
+          });
+        }
       }
       setDeleteTarget(null);
-      await loadData(true);
     } catch (err: unknown) {
       console.error('Delete failed:', err);
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
         (err as Error)?.message ||
-        (lang === 'es' ? 'No se pudo eliminar el registro seleccionado' : 'Could not delete selected record');
+        (lang === 'es' ? 'No se pudo procesar la eliminación' : 'Could not process deletion');
       toast.error(msg);
     } finally {
       setIsSubmitting(false);
@@ -655,8 +909,50 @@ export default function FinanzasPage() {
               {lang === 'es' ? 'Nuevo Tarifario' : 'New Price Agreement'}
             </button>
           )}
+
+          {/* Status Trash Tabs */}
+          <StatusFilterTabs
+            current={filterTrash}
+            onChange={setFilterTrash}
+            counts={
+              activeTab === 'invoices'
+                ? invoiceTrashCounts
+                : activeTab === 'payments'
+                ? paymentTrashCounts
+                : priceListTrashCounts
+            }
+            lang={lang}
+          />
         </div>
       </div>
+
+      {/* ── Informative Banner when in Trash ── */}
+      {filterTrash === 'trash' && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400 font-semibold">
+            <Archive size={18} className="shrink-0" />
+            <span>
+              {lang === 'es'
+                ? `Estás visualizando la papelera de ${
+                    activeTab === 'invoices'
+                      ? 'facturación y comprobantes SUNAT'
+                      : activeTab === 'payments'
+                      ? 'cobranzas y abonos'
+                      : 'tarifarios estacionales'
+                  } (anulados lógicamente). Haz clic en "Restaurar" para reactivarlos inmediatamente en la operación financiera.`
+                : `Viewing trash for ${
+                    activeTab === 'invoices' ? 'invoices' : activeTab === 'payments' ? 'payments' : 'price lists'
+                  } (soft deleted). Click "Restore" to reactivate any entry.`}
+            </span>
+          </div>
+          <button
+            onClick={() => setFilterTrash('active')}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors shrink-0 text-xs shadow-md shadow-rose-600/20 cursor-pointer self-start sm:self-center"
+          >
+            {lang === 'es' ? '← Ver Activos' : '← View Active'}
+          </button>
+        </div>
+      )}
 
       {/* TAB 1: FACTURAS & COMPROBANTES */}
       {activeTab === 'invoices' && (
@@ -746,41 +1042,69 @@ export default function FinanzasPage() {
                         {/* Actions */}
                         <td className="py-3.5 px-4 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {/* View CDR Modal */}
-                            <button
-                              onClick={() => setSelectedInvoiceForCdr(inv)}
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-emerald-500 hover:bg-emerald-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Ver Constancia CDR SUNAT' : 'View SUNAT CDR'}
-                            >
-                              <ShieldCheck size={14} />
-                            </button>
+                            {inv.isDeleted === true || inv.status === 'CANCELLED' || inv.status === 'ANULADA' || inv.isActive === false ? (
+                              <>
+                                <button
+                                  onClick={() => handleRestoreInvoice(inv)}
+                                  title={lang === 'es' ? 'Restaurar factura a emitidas' : 'Restore invoice'}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                >
+                                  <RotateCcw size={13} />
+                                  <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'invoice',
+                                      id: inv.invoiceId || 0,
+                                      name: inv.invoiceNumber,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {/* View CDR Modal */}
+                                <button
+                                  onClick={() => setSelectedInvoiceForCdr(inv)}
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-emerald-500 hover:bg-emerald-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Ver Constancia CDR SUNAT' : 'View SUNAT CDR'}
+                                >
+                                  <ShieldCheck size={14} />
+                                </button>
 
-                            {/* Edit Invoice */}
-                            <button
-                              onClick={() => {
-                                setEditingInvoice(inv);
-                                setIsInvoiceModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Editar Factura' : 'Edit Invoice'}
-                            >
-                              <Edit2 size={14} />
-                            </button>
+                                {/* Edit Invoice */}
+                                <button
+                                  onClick={() => {
+                                    setEditingInvoice(inv);
+                                    setIsInvoiceModalOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Editar Factura' : 'Edit Invoice'}
+                                >
+                                  <Edit2 size={14} />
+                                </button>
 
-                            {/* Delete Invoice */}
-                            <button
-                              onClick={() =>
-                                setDeleteTarget({
-                                  type: 'invoice',
-                                  id: inv.invoiceId || 0,
-                                  name: inv.invoiceNumber,
-                                })
-                              }
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Eliminar Factura' : 'Delete Invoice'}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                                {/* Delete Invoice */}
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'invoice',
+                                      id: inv.invoiceId || 0,
+                                      name: inv.invoiceNumber,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -861,30 +1185,58 @@ export default function FinanzasPage() {
                         {/* Actions */}
                         <td className="py-3.5 px-4 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => {
-                                setEditingPayment(p);
-                                setIsPaymentModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Editar Cobranza' : 'Edit Payment'}
-                            >
-                              <Edit2 size={14} />
-                            </button>
+                            {p.isDeleted === true || p.isActive === false ? (
+                              <>
+                                <button
+                                  onClick={() => handleRestorePayment(p)}
+                                  title={lang === 'es' ? 'Restaurar comprobante de abono' : 'Restore payment'}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                >
+                                  <RotateCcw size={13} />
+                                  <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'payment',
+                                      id: p.paymentId || 0,
+                                      name: p.referenceCode || `TXN-${p.paymentId}`,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setEditingPayment(p);
+                                    setIsPaymentModalOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Editar Cobranza' : 'Edit Payment'}
+                                >
+                                  <Edit2 size={14} />
+                                </button>
 
-                            <button
-                              onClick={() =>
-                                setDeleteTarget({
-                                  type: 'payment',
-                                  id: p.paymentId || 0,
-                                  name: p.referenceCode || `TXN-${p.paymentId}`,
-                                })
-                              }
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Eliminar Pago' : 'Delete Payment'}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'payment',
+                                      id: p.paymentId || 0,
+                                      name: p.referenceCode || `TXN-${p.paymentId}`,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -901,7 +1253,7 @@ export default function FinanzasPage() {
       {activeTab === 'pricelists' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {priceLists.length === 0 ? (
+            {filteredPriceLists.length === 0 ? (
               <div className="col-span-full p-12 text-center rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[var(--text-secondary)]">
                 <Tag size={36} className="mx-auto mb-2 opacity-50" />
                 <p className="font-semibold text-sm">
@@ -914,7 +1266,7 @@ export default function FinanzasPage() {
                 </p>
               </div>
             ) : (
-              priceLists.map((pl) => (
+              filteredPriceLists.map((pl) => (
                 <div
                   key={pl.id}
                   className="p-5 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-sm hover:border-purple-500/30 transition-all flex flex-col justify-between"
@@ -973,29 +1325,57 @@ export default function FinanzasPage() {
 
                   {/* Actions */}
                   <div className="flex items-center justify-end gap-2 pt-4 border-t border-[var(--border-subtle)] mt-4">
-                    <button
-                      onClick={() => {
-                        setEditingPriceList(pl);
-                        setIsPriceListModalOpen(true);
-                      }}
-                      className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
-                      title={lang === 'es' ? 'Editar Tarifario' : 'Edit Price List'}
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    <button
-                      onClick={() =>
-                        setDeleteTarget({
-                          type: 'pricelist',
-                          id: pl.id || '',
-                          name: pl.name || 'Tarifario',
-                        })
-                      }
-                      className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                      title={lang === 'es' ? 'Eliminar Tarifario' : 'Delete Price List'}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {pl.isDeleted === true || pl.isActive === false ? (
+                      <>
+                        <button
+                          onClick={() => handleRestorePriceList(pl)}
+                          title={lang === 'es' ? 'Restaurar tarifario' : 'Restore price list'}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-600 dark:text-purple-400 border border-purple-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                        >
+                          <RotateCcw size={13} />
+                          <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                        </button>
+                        <button
+                          onClick={() =>
+                            setDeleteTarget({
+                              type: 'pricelist',
+                              id: pl.id || '',
+                              name: pl.name || 'Tarifario',
+                            })
+                          }
+                          className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 transition-colors cursor-pointer"
+                          title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditingPriceList(pl);
+                            setIsPriceListModalOpen(true);
+                          }}
+                          className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                          title={lang === 'es' ? 'Editar Tarifario' : 'Edit Price List'}
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          onClick={() =>
+                            setDeleteTarget({
+                              type: 'pricelist',
+                              id: pl.id || '',
+                              name: pl.name || 'Tarifario',
+                            })
+                          }
+                          className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))
@@ -1062,26 +1442,57 @@ export default function FinanzasPage() {
         isOpen={Boolean(deleteTarget)}
         title={
           deleteTarget?.type === 'invoice'
-            ? lang === 'es' ? 'Eliminar Factura Electrónica' : 'Delete Electronic Invoice'
+            ? lang === 'es'
+              ? filterTrash === 'trash'
+                ? '¿Eliminar Factura Definitivamente?'
+                : '¿Mover Factura a la Papelera?'
+              : filterTrash === 'trash'
+              ? 'Permanently Delete Invoice?'
+              : 'Move Invoice to Trash?'
             : deleteTarget?.type === 'payment'
-            ? lang === 'es' ? 'Eliminar Registro de Pago' : 'Delete Payment Record'
-            : lang === 'es' ? 'Eliminar Tarifario' : 'Delete Price List'
+            ? lang === 'es'
+              ? filterTrash === 'trash'
+                ? '¿Eliminar Abono Definitivamente?'
+                : '¿Mover Pago a la Papelera?'
+              : filterTrash === 'trash'
+              ? 'Permanently Delete Payment?'
+              : 'Move Payment to Trash?'
+            : lang === 'es'
+            ? filterTrash === 'trash'
+              ? '¿Eliminar Tarifario Definitivamente?'
+              : '¿Mover Tarifario a la Papelera?'
+            : filterTrash === 'trash'
+            ? 'Permanently Delete Price Agreement?'
+            : 'Move Price Agreement to Trash?'
         }
         message={
           deleteTarget?.type === 'invoice'
             ? lang === 'es'
-                ? '¿Estás seguro de que deseas eliminar este comprobante tributario? Esta acción es irreversible.'
-                : 'Are you sure you want to permanently delete this invoice? This action cannot be undone.'
+              ? filterTrash === 'trash'
+                ? 'Esta acción destruirá permanentemente este comprobante tributario en la base de datos SQL Server.'
+                : 'La factura se marcará como anulada y se moverá a la papelera. Podrás restaurarla en cualquier momento.'
+              : filterTrash === 'trash'
+              ? 'This will permanently destroy the invoice from SQL Server.'
+              : 'The invoice will be cancelled and moved to trash. You can restore it anytime.'
             : deleteTarget?.type === 'payment'
             ? lang === 'es'
-                ? '¿Estás seguro de que deseas revertir este abono bancario?'
-                : 'Are you sure you want to revert this payment record?'
+              ? filterTrash === 'trash'
+                ? 'Esta acción eliminará definitivamente el comprobante bancario de SQL Server.'
+                : 'El registro de pago se moverá a la papelera. Podrás restaurarlo en cualquier momento.'
+              : filterTrash === 'trash'
+              ? 'This will permanently remove the payment record from SQL Server.'
+              : 'The payment will be moved to trash and can be restored anytime.'
             : lang === 'es'
-                ? '¿Estás seguro de que deseas eliminar este tarifario estacional de la base de datos?'
-                : 'Are you sure you want to delete this seasonal price agreement?'
+            ? filterTrash === 'trash'
+              ? 'Esta acción eliminará definitivamente el tarifario estacional de MongoDB.'
+              : 'El tarifario se moverá a la papelera y podrá ser restaurado.'
+            : filterTrash === 'trash'
+            ? 'This will permanently delete the price agreement from MongoDB.'
+            : 'The price agreement will be moved to trash and can be restored anytime.'
         }
         itemName={deleteTarget?.name || ''}
         isLoading={isSubmitting}
+        isSoftDelete={filterTrash !== 'trash'}
         lang={lang}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}

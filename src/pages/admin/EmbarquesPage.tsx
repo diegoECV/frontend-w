@@ -26,6 +26,9 @@ import {
   Package,
   ArrowRight,
   Eye,
+  RotateCcw,
+  Archive,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -58,6 +61,9 @@ import { ShipmentModal } from '../../components/orders/ShipmentModal';
 import { OrderDetailModal } from '../../components/orders/OrderDetailModal';
 import { OrderTrackingModal } from '../../components/orders/OrderTrackingModal';
 import { DeleteConfirmModal } from '../../components/products/DeleteConfirmModal';
+import { StatusFilterTabs, type FilterTrashStatus } from '../../components/shared/StatusFilterTabs';
+import { ImportModal } from '../../components/shared/ImportModal';
+import { notifyOperationUpdate } from '../../services/notificationService';
 
 type OutletCtx = { lang: 'es' | 'en' };
 type TabType = 'orders' | 'shipments' | 'customs';
@@ -67,6 +73,7 @@ export default function EmbarquesPage() {
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<TabType>('orders');
+  const [filterTrash, setFilterTrash] = useState<FilterTrashStatus>('active');
 
   // Core Data States
   const [orders, setOrders] = useState<Order[]>([]);
@@ -97,6 +104,7 @@ export default function EmbarquesPage() {
 
   const [selectedOrderForItems, setSelectedOrderForItems] = useState<Order | null>(null);
   const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<Order | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Deletion Modal
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -156,6 +164,19 @@ export default function EmbarquesPage() {
     return map;
   }, [clients]);
 
+  // Trash Counts
+  const orderTrashCounts = useMemo(() => {
+    const active = orders.filter((o) => !(o.isDeleted === true || o.status === 'CANCELLED' || o.isActive === false)).length;
+    const trash = orders.filter((o) => o.isDeleted === true || o.status === 'CANCELLED' || o.isActive === false).length;
+    return { active, trash, all: orders.length };
+  }, [orders]);
+
+  const shipmentTrashCounts = useMemo(() => {
+    const active = shipments.filter((s) => !(s.isDeleted === true || s.status === 'CANCELLED' || s.isActive === false)).length;
+    const trash = shipments.filter((s) => s.isDeleted === true || s.status === 'CANCELLED' || s.isActive === false).length;
+    return { active, trash, all: shipments.length };
+  }, [shipments]);
+
   // Filtered Orders
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -166,13 +187,19 @@ export default function EmbarquesPage() {
         (client?.companyName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (o.destinationPort || '').toLowerCase().includes(searchTerm.toLowerCase());
 
+      const isItemDeleted = o.isDeleted === true || o.status === 'CANCELLED' || o.isActive === false;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
       const matchesStatus = statusFilter === 'ALL' || o.status === statusFilter;
       const matchesIncoterm = incotermFilter === 'ALL' || o.incoterm === incotermFilter;
       const matchesClient = clientFilter === 'ALL' || o.clientId === clientFilter;
 
-      return matchesSearch && matchesStatus && matchesIncoterm && matchesClient;
+      return matchesSearch && matchesTrash && matchesStatus && matchesIncoterm && matchesClient;
     });
-  }, [orders, clientMap, searchTerm, statusFilter, incotermFilter, clientFilter]);
+  }, [orders, clientMap, searchTerm, filterTrash, statusFilter, incotermFilter, clientFilter]);
 
   // Filtered Shipments
   const filteredShipments = useMemo(() => {
@@ -185,11 +212,17 @@ export default function EmbarquesPage() {
         (s.freightForwarder || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (order?.orderCode || '').toLowerCase().includes(searchTerm.toLowerCase());
 
+      const isItemDeleted = s.isDeleted === true || s.status === 'CANCELLED' || s.isActive === false;
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && !isItemDeleted) ||
+        (filterTrash === 'trash' && isItemDeleted);
+
       const matchesStatus = statusFilter === 'ALL' || s.status === statusFilter;
 
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesTrash && matchesStatus;
     });
-  }, [shipments, orders, searchTerm, statusFilter]);
+  }, [shipments, orders, searchTerm, filterTrash, statusFilter]);
 
   // Order CRUD Handlers
   const handleSaveOrder = async (orderData: Partial<Order>): Promise<boolean> => {
@@ -202,6 +235,13 @@ export default function EmbarquesPage() {
             ? `Orden ${orderData.orderCode} actualizada correctamente`
             : `Order ${orderData.orderCode} updated successfully`
         );
+        notifyOperationUpdate({
+          module: 'EMBARQUES',
+          actionType: 'ACTUALIZACIÓN',
+          entityName: `Orden ${orderData.orderCode || editingOrder.orderCode}`,
+          details: `Orden de exportación ${orderData.orderCode || editingOrder.orderCode} actualizada. Incoterm: ${orderData.incoterm || editingOrder.incoterm}, Puerto: ${orderData.destinationPort || editingOrder.destinationPort}.`,
+          link: '/embarques',
+        });
       } else {
         await createOrder(orderData);
         toast.success(
@@ -209,6 +249,13 @@ export default function EmbarquesPage() {
             ? `Orden ${orderData.orderCode} registrada exitosamente`
             : `Order ${orderData.orderCode} created successfully`
         );
+        notifyOperationUpdate({
+          module: 'EMBARQUES',
+          actionType: 'CREACIÓN',
+          entityName: `Orden ${orderData.orderCode}`,
+          details: `Nueva orden de exportación registrada: ${orderData.orderCode} (Incoterm: ${orderData.incoterm || 'FOB'}, Destino: ${orderData.destinationPort || 'Callao'}).`,
+          link: '/embarques',
+        });
       }
       setIsOrderModalOpen(false);
       setEditingOrder(null);
@@ -238,6 +285,13 @@ export default function EmbarquesPage() {
             ? `Embarque ${shipmentData.containerNumber} actualizado con éxito`
             : `Shipment ${shipmentData.containerNumber} updated successfully`
         );
+        notifyOperationUpdate({
+          module: 'EMBARQUES',
+          actionType: 'ACTUALIZACIÓN',
+          entityName: `Embarque ${shipmentData.containerNumber}`,
+          details: `Contenedor ${shipmentData.containerNumber} actualizado. Agente/Naviera: ${shipmentData.freightForwarder || shipmentData.vesselName || 'N/A'}, BL: ${shipmentData.blNumber || 'N/A'}.`,
+          link: '/embarques',
+        });
       } else {
         await createShipment(shipmentData);
         toast.success(
@@ -245,6 +299,13 @@ export default function EmbarquesPage() {
             ? `Embarque ${shipmentData.containerNumber} registrado exitosamente`
             : `Shipment ${shipmentData.containerNumber} registered successfully`
         );
+        notifyOperationUpdate({
+          module: 'EMBARQUES',
+          actionType: 'CREACIÓN',
+          entityName: `Embarque ${shipmentData.containerNumber}`,
+          details: `Nuevo embarque marítimo Reefer registrado: Contenedor ${shipmentData.containerNumber} (${shipmentData.freightForwarder || shipmentData.vesselName || 'Marítimo'}).`,
+          link: '/embarques',
+        });
       }
       setIsShipmentModalOpen(false);
       setEditingShipment(null);
@@ -263,36 +324,142 @@ export default function EmbarquesPage() {
     }
   };
 
+  // RESTAURAR ORDEN
+  const handleRestoreOrder = async (order: Order) => {
+    try {
+      await updateOrder(order.orderId, { ...order, status: 'CONFIRMED', isDeleted: false, isActive: true });
+      setOrders((prev) =>
+        prev.map((o) => (o.orderId === order.orderId ? { ...o, status: 'CONFIRMED', isDeleted: false, isActive: true } : o))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Orden ${order.orderCode} restaurada exitosamente a operaciones`
+          : `Order ${order.orderCode} restored successfully`
+      );
+      notifyOperationUpdate({
+        module: 'EMBARQUES',
+        actionType: 'RESTAURACIÓN',
+        entityName: `Orden ${order.orderCode}`,
+        details: `Orden de exportación ${order.orderCode} restaurada a operaciones activas.`,
+        link: '/embarques',
+      });
+    } catch (err) {
+      console.error('Error restoring order:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar orden' : 'Failed to restore order');
+    }
+  };
+
+  // RESTAURAR EMBARQUE
+  const handleRestoreShipment = async (shipment: Shipment) => {
+    if (!shipment.shipmentId) return;
+    try {
+      await updateShipment(shipment.shipmentId, { ...shipment, status: 'BOOKED', isDeleted: false, isActive: true });
+      setShipments((prev) =>
+        prev.map((s) => (s.shipmentId === shipment.shipmentId ? { ...s, status: 'BOOKED', isDeleted: false, isActive: true } : s))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Embarque ${shipment.containerNumber} restaurado con éxito a la logística`
+          : `Shipment ${shipment.containerNumber} restored successfully`
+      );
+      notifyOperationUpdate({
+        module: 'EMBARQUES',
+        actionType: 'RESTAURACIÓN',
+        entityName: `Embarque ${shipment.containerNumber}`,
+        details: `Embarque marítimo ${shipment.containerNumber} restaurado a la logística activa.`,
+        link: '/embarques',
+      });
+    } catch (err) {
+      console.error('Error restoring shipment:', err);
+      toast.error(lang === 'es' ? 'Error al restaurar embarque' : 'Failed to restore shipment');
+    }
+  };
+
   // Deletion Confirmation Handler
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     setIsSubmitting(true);
     try {
-      if (deleteTarget.type === 'order') {
-        await deleteOrder(deleteTarget.id);
-        toast.success(
-          lang === 'es'
-            ? `Orden ${deleteTarget.name} eliminada permanentemente`
-            : `Order ${deleteTarget.name} deleted permanently`
-        );
+      if (filterTrash === 'trash') {
+        if (deleteTarget.type === 'order') {
+          await deleteOrder(deleteTarget.id);
+          setOrders((prev) => prev.filter((o) => o.orderId !== deleteTarget.id));
+          toast.success(
+            lang === 'es'
+              ? `Orden ${deleteTarget.name} eliminada permanentemente`
+              : `Order ${deleteTarget.name} deleted permanently`
+          );
+          notifyOperationUpdate({
+            module: 'EMBARQUES',
+            actionType: 'PAPELERA',
+            entityName: `Orden ${deleteTarget.name}`,
+            details: `Orden de exportación ${deleteTarget.name} purgada definitivamente.`,
+            link: '/embarques',
+          });
+        } else {
+          await deleteShipment(deleteTarget.id);
+          setShipments((prev) => prev.filter((s) => s.shipmentId !== deleteTarget.id));
+          toast.success(
+            lang === 'es'
+              ? `Embarque ${deleteTarget.name} eliminado definitivamente`
+              : `Shipment ${deleteTarget.name} deleted permanently`
+          );
+          notifyOperationUpdate({
+            module: 'EMBARQUES',
+            actionType: 'PAPELERA',
+            entityName: `Embarque ${deleteTarget.name}`,
+            details: `Embarque ${deleteTarget.name} purgado definitivamente.`,
+            link: '/embarques',
+          });
+        }
       } else {
-        await deleteShipment(deleteTarget.id);
-        toast.success(
-          lang === 'es'
-            ? `Embarque ${deleteTarget.name} eliminado correctamente`
-            : `Shipment ${deleteTarget.name} deleted successfully`
-        );
+        if (deleteTarget.type === 'order') {
+          const target = orders.find((o) => o.orderId === deleteTarget.id);
+          await updateOrder(deleteTarget.id, { ...target, status: 'CANCELLED', isDeleted: true, isActive: false });
+          setOrders((prev) =>
+            prev.map((o) => (o.orderId === deleteTarget.id ? { ...o, status: 'CANCELLED', isDeleted: true, isActive: false } : o))
+          );
+          toast.success(
+            lang === 'es'
+              ? `Orden ${deleteTarget.name} enviada a la papelera (anulada lógicamente)`
+              : `Order ${deleteTarget.name} moved to trash (soft deleted)`
+          );
+          notifyOperationUpdate({
+            module: 'EMBARQUES',
+            actionType: 'PAPELERA',
+            entityName: `Orden ${deleteTarget.name}`,
+            details: `Orden de exportación ${deleteTarget.name} movida a la papelera (anulada).`,
+            link: '/embarques',
+          });
+        } else {
+          const target = shipments.find((s) => s.shipmentId === deleteTarget.id);
+          await updateShipment(deleteTarget.id, { ...target, status: 'CANCELLED', isDeleted: true, isActive: false });
+          setShipments((prev) =>
+            prev.map((s) => (s.shipmentId === deleteTarget.id ? { ...s, status: 'CANCELLED', isDeleted: true, isActive: false } : s))
+          );
+          toast.success(
+            lang === 'es'
+              ? `Embarque ${deleteTarget.name} enviado a la papelera (anulado lógicamente)`
+              : `Shipment ${deleteTarget.name} moved to trash (soft deleted)`
+          );
+          notifyOperationUpdate({
+            module: 'EMBARQUES',
+            actionType: 'PAPELERA',
+            entityName: `Embarque ${deleteTarget.name}`,
+            details: `Embarque marítimo ${deleteTarget.name} movido a la papelera (anulado).`,
+            link: '/embarques',
+          });
+        }
       }
       setDeleteTarget(null);
-      await loadData(true);
     } catch (err: unknown) {
       console.error('Delete failed:', err);
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
         (err as Error)?.message ||
         (lang === 'es'
-          ? 'No se pudo eliminar el registro. Puede tener datos vinculados (items/embarques).'
-          : 'Could not delete record. It may have linked items or shipments.');
+          ? 'No se pudo procesar la eliminación.'
+          : 'Could not process deletion.');
       toast.error(msg);
     } finally {
       setIsSubmitting(false);
@@ -450,6 +617,16 @@ export default function EmbarquesPage() {
               <span>CSV</span>
             </button>
           </div>
+
+          {/* Import Button */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] hover:bg-[var(--bg-card)] text-xs font-semibold text-[var(--text-primary)] transition-all cursor-pointer shadow-sm"
+            title={lang === 'es' ? 'Importar órdenes comerciales desde Excel o CSV' : 'Import export orders from Excel or CSV'}
+          >
+            <Upload size={15} className="text-emerald-500" />
+            <span>{lang === 'es' ? 'Importar' : 'Import'}</span>
+          </button>
 
           {/* Primary Action Buttons */}
           <button
@@ -707,8 +884,38 @@ export default function EmbarquesPage() {
               </select>
             </div>
           )}
+
+          {/* Status Trash Tabs */}
+          {(activeTab === 'orders' || activeTab === 'shipments') && (
+            <StatusFilterTabs
+              current={filterTrash}
+              onChange={setFilterTrash}
+              counts={activeTab === 'orders' ? orderTrashCounts : shipmentTrashCounts}
+              lang={lang}
+            />
+          )}
         </div>
       </div>
+
+      {/* ── Informative Banner when in Trash ── */}
+      {filterTrash === 'trash' && (activeTab === 'orders' || activeTab === 'shipments') && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400 font-semibold">
+            <Archive size={18} className="shrink-0" />
+            <span>
+              {lang === 'es'
+                ? `Estás visualizando la papelera de ${activeTab === 'orders' ? 'órdenes comerciales' : 'embarques marítimos'} (anulados lógicamente). Haz clic en "Restaurar" para reactivarlos inmediatamente en la operación.`
+                : `Viewing trash for ${activeTab === 'orders' ? 'orders' : 'shipments'} (soft deleted). Click "Restore" to reactivate any entry.`}
+            </span>
+          </div>
+          <button
+            onClick={() => setFilterTrash('active')}
+            className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors shrink-0 text-xs shadow-md shadow-rose-600/20 cursor-pointer self-start sm:self-center"
+          >
+            {lang === 'es' ? '← Ver Activos' : '← View Active'}
+          </button>
+        </div>
+      )}
 
       {/* TAB 1: ÓRDENES COMERCIALES */}
       {activeTab === 'orders' && (
@@ -824,50 +1031,78 @@ export default function EmbarquesPage() {
                         {/* Actions */}
                         <td className="py-3.5 px-4">
                           <div className="flex items-center justify-center gap-1.5">
-                            {/* Items modal button */}
-                            <button
-                              onClick={() => setSelectedOrderForItems(ord)}
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-violet-400 hover:bg-violet-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Ver / Modificar Items de la Orden' : 'View / Edit Items'}
-                            >
-                              <Package size={14} />
-                            </button>
+                            {ord.isDeleted === true || ord.status === 'CANCELLED' || ord.isActive === false ? (
+                              <>
+                                <button
+                                  onClick={() => handleRestoreOrder(ord)}
+                                  title={lang === 'es' ? 'Restaurar orden comercial' : 'Restore commercial order'}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 text-violet-600 dark:text-violet-400 border border-violet-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                >
+                                  <RotateCcw size={13} />
+                                  <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'order',
+                                      id: ord.orderId,
+                                      name: ord.orderCode,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Eliminar definitivamente' : 'Delete permanently'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {/* Items modal button */}
+                                <button
+                                  onClick={() => setSelectedOrderForItems(ord)}
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-violet-400 hover:bg-violet-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Ver / Modificar Items de la Orden' : 'View / Edit Items'}
+                                >
+                                  <Package size={14} />
+                                </button>
 
-                            {/* Tracking modal button */}
-                            <button
-                              onClick={() => setSelectedOrderForTracking(ord)}
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-cyan-400 hover:bg-cyan-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Trazabilidad y Logística de Exportación' : 'Export Tracking'}
-                            >
-                              <Eye size={14} />
-                            </button>
+                                {/* Tracking modal button */}
+                                <button
+                                  onClick={() => setSelectedOrderForTracking(ord)}
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-cyan-400 hover:bg-cyan-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Trazabilidad y Logística de Exportación' : 'Export Tracking'}
+                                >
+                                  <Eye size={14} />
+                                </button>
 
-                            {/* Edit button */}
-                            <button
-                              onClick={() => {
-                                setEditingOrder(ord);
-                                setIsOrderModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-400 hover:bg-blue-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Editar Orden' : 'Edit Order'}
-                            >
-                              <Edit2 size={14} />
-                            </button>
+                                {/* Edit button */}
+                                <button
+                                  onClick={() => {
+                                    setEditingOrder(ord);
+                                    setIsOrderModalOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-400 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Editar Orden' : 'Edit Order'}
+                                >
+                                  <Edit2 size={14} />
+                                </button>
 
-                            {/* Delete button */}
-                            <button
-                              onClick={() =>
-                                setDeleteTarget({
-                                  type: 'order',
-                                  id: ord.orderId,
-                                  name: ord.orderCode,
-                                })
-                              }
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Eliminar Orden' : 'Delete Order'}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                                {/* Delete button */}
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'order',
+                                      id: ord.orderId,
+                                      name: ord.orderCode,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -967,30 +1202,58 @@ export default function EmbarquesPage() {
                         {/* Actions */}
                         <td className="py-3.5 px-4 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => {
-                                setEditingShipment(s);
-                                setIsShipmentModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-400 hover:bg-blue-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Editar Embarque' : 'Edit Shipment'}
-                            >
-                              <Edit2 size={14} />
-                            </button>
+                            {s.isDeleted === true || s.status === 'CANCELLED' || s.isActive === false ? (
+                              <>
+                                <button
+                                  onClick={() => handleRestoreShipment(s)}
+                                  title={lang === 'es' ? 'Restaurar embarque reefer' : 'Restore reefer shipment'}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                >
+                                  <RotateCcw size={13} />
+                                  <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'shipment',
+                                      id: s.shipmentId || 0,
+                                      name: s.containerNumber,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setEditingShipment(s);
+                                    setIsShipmentModalOpen(true);
+                                  }}
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-blue-400 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Editar Embarque' : 'Edit Shipment'}
+                                >
+                                  <Edit2 size={14} />
+                                </button>
 
-                            <button
-                              onClick={() =>
-                                setDeleteTarget({
-                                  type: 'shipment',
-                                  id: s.shipmentId || 0,
-                                  name: s.containerNumber,
-                                })
-                              }
-                              className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                              title={lang === 'es' ? 'Eliminar Embarque' : 'Delete Shipment'}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'shipment',
+                                      id: s.shipmentId || 0,
+                                      name: s.containerNumber,
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                  title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1154,23 +1417,53 @@ export default function EmbarquesPage() {
         isOpen={Boolean(deleteTarget)}
         title={
           deleteTarget?.type === 'order'
-            ? lang === 'es' ? 'Eliminar Orden Comercial' : 'Delete Commercial Order'
-            : lang === 'es' ? 'Eliminar Embarque Reefer' : 'Delete Reefer Shipment'
+            ? lang === 'es'
+              ? filterTrash === 'trash'
+                ? '¿Eliminar Orden Definitivamente?'
+                : '¿Mover Orden a la Papelera?'
+              : filterTrash === 'trash'
+              ? 'Permanently Delete Order?'
+              : 'Move Order to Trash?'
+            : lang === 'es'
+            ? filterTrash === 'trash'
+              ? '¿Eliminar Embarque Definitivamente?'
+              : '¿Mover Embarque a la Papelera?'
+            : filterTrash === 'trash'
+            ? 'Permanently Delete Shipment?'
+            : 'Move Shipment to Trash?'
         }
         message={
           deleteTarget?.type === 'order'
             ? lang === 'es'
-                ? '¿Estás seguro de que deseas eliminar permanentemente esta orden comercial? Esta acción no se puede deshacer.'
-                : 'Are you sure you want to permanently delete this commercial order? This action cannot be undone.'
+              ? filterTrash === 'trash'
+                ? 'Esta acción destruirá permanentemente la orden comercial de la base de datos SQL Server.'
+                : 'La orden se marcará como anulada y se moverá a la papelera. Podrás restaurarla en cualquier momento.'
+              : filterTrash === 'trash'
+              ? 'This action will permanently delete the commercial order from SQL Server.'
+              : 'The order will be cancelled and moved to trash. You can restore it anytime.'
             : lang === 'es'
-                ? '¿Estás seguro de que deseas eliminar este contenedor de la logística marítima?'
-                : 'Are you sure you want to remove this Reefer container from ocean logistics?'
+            ? filterTrash === 'trash'
+              ? 'Esta acción eliminará definitivamente el contenedor reefer de la logística marítima.'
+              : 'El embarque se marcará como anulado y se moverá a la papelera. Podrás restaurarlo en cualquier momento.'
+            : filterTrash === 'trash'
+            ? 'This will permanently destroy the shipment and tracking telemetry.'
+            : 'The shipment will be moved to trash and can be restored anytime.'
         }
         itemName={deleteTarget?.name || ''}
         isLoading={isSubmitting}
+        isSoftDelete={filterTrash !== 'trash'}
         lang={lang}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* MODAL: IMPORTACIÓN MASIVA DE ÓRDENES */}
+      <ImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        module="orders"
+        lang={lang}
+        onSuccess={() => loadData(true)}
       />
     </div>
   );

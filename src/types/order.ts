@@ -18,6 +18,8 @@ export interface Order {
   destinationPort?: string | null;
   estimatedShippingDate?: string | null;
   trackingEvents?: TrackingEvent[] | null;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
 }
 
 export interface OrderDetail {
@@ -45,6 +47,8 @@ export interface Shipment {
   estimatedArrival?: string;
   temperatureSetpoint?: number;
   status: 'BOOKED' | 'GATE_IN' | 'IN_TRANSIT' | 'CUSTOMS_HOLD' | 'DELIVERED' | 'CANCELLED' | string;
+  isActive?: boolean | null;
+  isDeleted?: boolean | null;
 }
 
 export interface ShipmentItem {

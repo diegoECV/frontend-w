@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Building2,
@@ -16,7 +16,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Leaf,
+  LogOut,
+  BarChart3,
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { toast } from 'sonner';
 
 interface NavItem {
   id: string;
@@ -36,6 +40,18 @@ interface SidebarProps {
 export default function Sidebar({ lang, pendingCount = 0 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    toast.success(lang === 'es' ? 'Sesión cerrada correctamente' : 'Logged out successfully', {
+      description: lang === 'es'
+        ? 'Has salido del sistema de administración.'
+        : 'You have signed out from the admin system.',
+    });
+    navigate('/login');
+  };
 
   const NAV_ITEMS: NavItem[] = [
     {
@@ -94,6 +110,14 @@ export default function Sidebar({ lang, pendingCount = 0 }: SidebarProps) {
       icon: <Users size={20} />,
       path: '/usuarios',
       accent: '#f43f5e',
+    },
+    {
+      id: 'analytics',
+      label: 'Dashboard Analítico',
+      labelEn: 'Analytics Dashboard',
+      icon: <BarChart3 size={20} />,
+      path: '/analitica',
+      accent: '#06b6d4',
     },
   ];
 
@@ -207,25 +231,102 @@ export default function Sidebar({ lang, pendingCount = 0 }: SidebarProps) {
         })}
       </nav>
 
-      {/* ── Botón Colapsar / Expandir ── */}
-      <div className="p-2 border-t border-[var(--border-subtle)]">
+      {/* ── Sección de Usuario & Acciones Inferiores ── */}
+      <div className="p-2 border-t border-[var(--border-subtle)] space-y-1">
+        {/* Info de Usuario (solo cuando expandido) */}
+        {!collapsed && user && (
+          <div className="flex items-center gap-2.5 px-2.5 py-2 mb-1 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-subtle)]">
+            {user.avatar ? (
+              <img
+                src={user.avatar}
+                alt={user.name}
+                className="w-8 h-8 rounded-lg object-cover border border-[var(--border-subtle)] shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-sm shadow-emerald-600/30">
+                {(user.name || 'A').charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-xs font-bold text-[var(--text-primary)] truncate leading-tight">
+                {user.name}
+              </p>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wider truncate">
+                {user.role}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Botón Salir / Cerrar Sesión */}
+        <button
+          onClick={handleLogout}
+          title={collapsed ? (lang === 'es' ? 'Cerrar sesión' : 'Log out') : undefined}
+          className={`
+            group relative w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl
+            text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600
+            border border-rose-500/20 hover:border-rose-600
+            shadow-sm hover:shadow-md hover:shadow-rose-600/20
+            transition-all duration-150 cursor-pointer font-bold text-xs select-none
+            ${collapsed ? 'justify-center p-2.5' : ''}
+          `}
+        >
+          <LogOut size={16} className="shrink-0 transition-transform duration-150 group-hover:-translate-x-0.5" />
+          {!collapsed && (
+            <span className="truncate">
+              {lang === 'es' ? 'Cerrar sesión' : 'Log out'}
+            </span>
+          )}
+
+          {/* Tooltip solo colapsado */}
+          {collapsed && (
+            <div className="
+              absolute left-full ml-3 px-2.5 py-1.5 rounded-lg
+              bg-[var(--surface-card)] border border-rose-500/30
+              text-[12px] font-bold text-rose-400
+              shadow-xl whitespace-nowrap
+              opacity-0 pointer-events-none
+              group-hover:opacity-100 group-hover:pointer-events-auto
+              transition-opacity duration-150 z-50
+            ">
+              {lang === 'es' ? 'Cerrar sesión' : 'Log out'}
+            </div>
+          )}
+        </button>
+
+        {/* Botón Colapsar / Expandir */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          title={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+          title={collapsed ? (lang === 'es' ? 'Expandir menú' : 'Expand menu') : undefined}
           className={`
-            w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl
+            group relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl
             text-[var(--text-hint)] hover:text-[var(--text-primary)]
-            hover:bg-[var(--surface-subtle)] transition-all cursor-pointer
+            hover:bg-[var(--surface-subtle)] transition-all cursor-pointer select-none
             ${collapsed ? 'justify-center' : ''}
           `}
         >
           <span className="shrink-0 transition-transform duration-300">
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            {collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
           </span>
           {!collapsed && (
-            <span className="text-[12px] font-medium">
-              {collapsed ? '' : 'Colapsar menú'}
+            <span className="text-[12px] font-medium truncate">
+              {lang === 'es' ? 'Colapsar menú' : 'Collapse menu'}
             </span>
+          )}
+
+          {/* Tooltip solo colapsado */}
+          {collapsed && (
+            <div className="
+              absolute left-full ml-3 px-2.5 py-1.5 rounded-lg
+              bg-[var(--surface-card)] border border-[var(--border-subtle)]
+              text-[12px] font-semibold text-[var(--text-primary)]
+              shadow-lg whitespace-nowrap
+              opacity-0 pointer-events-none
+              group-hover:opacity-100 group-hover:pointer-events-auto
+              transition-opacity duration-150 z-50
+            ">
+              {lang === 'es' ? 'Expandir menú' : 'Expand menu'}
+            </div>
           )}
         </button>
       </div>

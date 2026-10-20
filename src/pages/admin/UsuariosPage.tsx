@@ -29,6 +29,9 @@ import {
   Globe,
   Database,
   Lock,
+  RotateCcw,
+  Archive,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -39,7 +42,6 @@ import {
   updateUser,
   deleteUser,
   toggleUserStatus,
-  approveUser,
   exportUsersExcel,
   exportUsersPdf,
   exportUsersCsv,
@@ -54,6 +56,9 @@ import { UserModal } from '../../components/users/UserModal';
 import { AuditDetailModal } from '../../components/users/AuditDetailModal';
 import { RevokeTokenModal } from '../../components/users/RevokeTokenModal';
 import { DeleteConfirmModal } from '../../components/products/DeleteConfirmModal';
+import { StatusFilterTabs, type FilterTrashStatus } from '../../components/shared/StatusFilterTabs';
+import { ImportModal } from '../../components/shared/ImportModal';
+import { notifyOperationUpdate } from '../../services/notificationService';
 
 export default function UsuariosPage() {
   const { lang } = useOutletContext<{ lang: 'es' | 'en' }>();
@@ -73,6 +78,7 @@ export default function UsuariosPage() {
 
   // Filtros y búsquedas
   const [searchUser, setSearchUser] = useState('');
+  const [filterTrash, setFilterTrash] = useState<FilterTrashStatus>('active');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
@@ -85,6 +91,7 @@ export default function UsuariosPage() {
 
   const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLog | null>(null);
   const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<{
     type: 'user' | 'audit' | 'token';
@@ -235,6 +242,13 @@ export default function UsuariosPage() {
   const pendingApprovalsCount = users.filter((u) => !u.isActive).length;
   const auditLogsCount = auditLogs.length;
 
+  // Conteo de Papelera Usuarios
+  const userTrashCounts = useMemo(() => {
+    const active = users.filter((u) => u.isActive).length;
+    const trash = users.filter((u) => !u.isActive).length;
+    return { active, trash, all: users.length };
+  }, [users]);
+
   // Filtrado de usuarios
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
@@ -246,6 +260,11 @@ export default function UsuariosPage() {
         u.email?.toLowerCase().includes(q) ||
         u.department?.toLowerCase().includes(q);
 
+      const matchesTrash =
+        filterTrash === 'all' ||
+        (filterTrash === 'active' && u.isActive) ||
+        (filterTrash === 'trash' && !u.isActive);
+
       const matchesRole = roleFilter === 'ALL' || u.role === roleFilter;
 
       const matchesStatus =
@@ -253,9 +272,9 @@ export default function UsuariosPage() {
         (statusFilter === 'ACTIVE' && u.isActive) ||
         (statusFilter === 'INACTIVE' && !u.isActive);
 
-      return matchesSearch && matchesRole && matchesStatus;
+      return matchesSearch && matchesTrash && matchesRole && matchesStatus;
     });
-  }, [users, searchUser, roleFilter, statusFilter]);
+  }, [users, searchUser, filterTrash, roleFilter, statusFilter]);
 
   // Filtrado de auditoría
   const filteredAuditLogs = useMemo(() => {
@@ -284,11 +303,25 @@ export default function UsuariosPage() {
         toast.success(
           lang === 'es' ? 'Usuario actualizado exitosamente' : 'User updated successfully'
         );
+        notifyOperationUpdate({
+          module: 'USUARIOS',
+          actionType: 'ACTUALIZACIÓN',
+          entityName: `Usuario ${editingUser.name}`,
+          details: `Perfil de ${editingUser.name} (${editingUser.email}) actualizado. Rol: ${userData.role || editingUser.role}.`,
+          link: '/usuarios',
+        });
       } else {
         await createUser(userData);
         toast.success(
           lang === 'es' ? 'Usuario registrado exitosamente' : 'User created successfully'
         );
+        notifyOperationUpdate({
+          module: 'USUARIOS',
+          actionType: 'CREACIÓN',
+          entityName: `Usuario ${userData.name}`,
+          details: `Nueva cuenta de usuario creada: ${userData.name} (${userData.email}). Rol asignado: ${userData.role}.`,
+          link: '/usuarios',
+        });
       }
       setIsUserModalOpen(false);
       setEditingUser(null);
@@ -311,6 +344,13 @@ export default function UsuariosPage() {
           ? `Usuario ${user.isActive ? 'desactivado' : 'activado'} correctamente`
           : `User ${user.isActive ? 'deactivated' : 'activated'} successfully`
       );
+      notifyOperationUpdate({
+        module: 'USUARIOS',
+        actionType: 'CAMBIO DE ESTADO',
+        entityName: `Usuario ${user.name}`,
+        details: `El usuario ${user.name} (${user.email}) fue ${user.isActive ? 'desactivado' : 'activado'}.`,
+        link: '/usuarios',
+      });
       // Actualización optimista local
       setUsers((prev) =>
         prev.map((u) => (u.id === user.id ? { ...u, isActive: !u.isActive } : u))
@@ -322,21 +362,6 @@ export default function UsuariosPage() {
     }
   };
 
-  const handleApprove = async (user: User) => {
-    try {
-      await approveUser(user.id);
-      toast.success(
-        lang === 'es'
-          ? `Cuenta de "${user.name}" aprobada y correo de bienvenida enviado`
-          : `Account for "${user.name}" approved and welcome email dispatched`
-      );
-      await fetchData();
-    } catch {
-      toast.error(
-        lang === 'es' ? 'Error al aprobar cuenta de usuario' : 'Failed to approve account'
-      );
-    }
-  };
 
   // Acciones de Revocación de Token
   const handleSaveRevokedToken = async (tokenData: Partial<RevokedToken>) => {
@@ -358,16 +383,75 @@ export default function UsuariosPage() {
     }
   };
 
+  // Restaurar usuario
+  const handleRestoreUser = async (user: User) => {
+    try {
+      if (!user.isActive) {
+        await toggleUserStatus(user.id);
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, isActive: true } : u))
+      );
+      toast.success(
+        lang === 'es'
+          ? `Usuario "${user.name}" restaurado y reactivado exitosamente`
+          : `User "${user.name}" restored and activated successfully`
+      );
+      notifyOperationUpdate({
+        module: 'USUARIOS',
+        actionType: 'RESTAURACIÓN',
+        entityName: `Usuario ${user.name}`,
+        details: `La cuenta de usuario "${user.name}" (${user.email}) ha sido restaurada y reactivada.`,
+        link: '/usuarios',
+      });
+    } catch {
+      toast.error(
+        lang === 'es' ? 'Error al restaurar usuario' : 'Failed to restore user'
+      );
+    }
+  };
+
   // Confirmación de Borrado
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     setIsSubmitting(true);
     try {
       if (deleteTarget.type === 'user') {
-        await deleteUser(String(deleteTarget.id));
-        toast.success(
-          lang === 'es' ? 'Usuario eliminado del sistema' : 'User deleted from system'
-        );
+        if (filterTrash === 'trash') {
+          // Purgar definitivamente
+          await deleteUser(String(deleteTarget.id));
+          toast.success(
+            lang === 'es' ? 'Cuenta de usuario purgada definitivamente' : 'User account permanently purged'
+          );
+          notifyOperationUpdate({
+            module: 'USUARIOS',
+            actionType: 'PAPELERA',
+            entityName: `Usuario ${deleteTarget.name}`,
+            details: `Cuenta de usuario ${deleteTarget.name} purgada permanentemente.`,
+            link: '/usuarios',
+          });
+        } else {
+          // Desactivación lógica (enviar a papelera)
+          const target = users.find((u) => u.id === String(deleteTarget.id));
+          if (target && target.isActive) {
+            await toggleUserStatus(String(deleteTarget.id));
+          }
+          setUsers((prev) =>
+            prev.map((u) => (u.id === String(deleteTarget.id) ? { ...u, isActive: false } : u))
+          );
+          toast.success(
+            lang === 'es'
+              ? `Usuario "${deleteTarget.name}" enviado a la papelera (desactivado lógicamente)`
+              : `User "${deleteTarget.name}" moved to trash`
+          );
+          notifyOperationUpdate({
+            module: 'USUARIOS',
+            actionType: 'PAPELERA',
+            entityName: `Usuario ${deleteTarget.name}`,
+            details: `Usuario ${deleteTarget.name} enviado a la papelera (desactivado).`,
+            link: '/usuarios',
+          });
+        }
       } else if (deleteTarget.type === 'audit') {
         await deleteAuditLog(Number(deleteTarget.id));
         toast.success(
@@ -542,6 +626,16 @@ export default function UsuariosPage() {
               <span className="hidden md:inline">CSV</span>
             </button>
           </div>
+
+          {/* Botón de Importación */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            title={lang === 'es' ? 'Importar usuarios desde Excel o CSV' : 'Import users from Excel or CSV'}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-subtle)] text-xs font-semibold text-[var(--text-primary)] transition-all cursor-pointer shadow-sm"
+          >
+            <Upload size={14} className="text-emerald-500" />
+            <span className="hidden sm:inline">{lang === 'es' ? 'Importar' : 'Import'}</span>
+          </button>
 
           <button
             onClick={() => {
@@ -770,8 +864,41 @@ export default function UsuariosPage() {
                   </option>
                 </select>
               </div>
+
+              {/* Status Trash Tabs */}
+              <StatusFilterTabs
+                current={filterTrash}
+                onChange={setFilterTrash}
+                counts={userTrashCounts}
+                labels={{
+                  active: lang === 'es' ? 'Activos' : 'Active',
+                  trash: lang === 'es' ? 'Papelera / Inactivos' : 'Trash / Inactive',
+                  all: lang === 'es' ? 'Todos' : 'All',
+                }}
+                lang={lang}
+              />
             </div>
           </div>
+
+          {/* Banner de Papelera */}
+          {filterTrash === 'trash' && (
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs animate-fadeIn">
+              <div className="flex items-center gap-2.5 text-rose-600 dark:text-rose-400 font-semibold">
+                <Archive size={18} className="shrink-0" />
+                <span>
+                  {lang === 'es'
+                    ? 'Estás visualizando los usuarios inactivos / eliminados lógicamente. Haz clic en "Restaurar" para reactivar su cuenta y permisos en el sistema.'
+                    : 'Viewing inactive / soft-deleted users in trash. Click "Restore" to reactivate their account and permissions.'}
+                </span>
+              </div>
+              <button
+                onClick={() => setFilterTrash('active')}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors shrink-0 text-xs shadow-md shadow-rose-600/20 cursor-pointer self-start sm:self-center"
+              >
+                {lang === 'es' ? '← Ver Activos' : '← View Active'}
+              </button>
+            </div>
+          )}
 
           {/* Tabla de Usuarios */}
           <div className="rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)] overflow-hidden shadow-sm">
@@ -868,60 +995,69 @@ export default function UsuariosPage() {
                         {/* Acciones */}
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Botón Rápido de Aprobación si está inactivo */}
-                            {!user.isActive && (
-                              <button
-                                onClick={() => handleApprove(user)}
-                                title={lang === 'es' ? 'Aprobar Cuenta' : 'Approve Account'}
-                                className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all cursor-pointer"
-                              >
-                                <CheckCircle2 size={14} />
-                              </button>
+                            {!user.isActive ? (
+                              <>
+                                <button
+                                  onClick={() => handleRestoreUser(user)}
+                                  title={lang === 'es' ? 'Restaurar y reactivar usuario' : 'Restore and reactivate user'}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                >
+                                  <RotateCcw size={13} />
+                                  <span>{lang === 'es' ? 'Restaurar' : 'Restore'}</span>
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'user',
+                                      id: user.id,
+                                      name: user.name || user.username,
+                                    })
+                                  }
+                                  title={lang === 'es' ? 'Eliminar definitivamente' : 'Permanently delete'}
+                                  className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 hover:bg-red-500/15 transition-all cursor-pointer"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {/* Deshabilitar (Mover a papelera) */}
+                                <button
+                                  onClick={() => handleToggleStatus(user)}
+                                  title={lang === 'es' ? 'Deshabilitar Usuario' : 'Disable User'}
+                                  className="p-1.5 rounded-lg border transition-all cursor-pointer bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border-amber-500/20"
+                                >
+                                  <UserX size={14} />
+                                </button>
+
+                                {/* Editar */}
+                                <button
+                                  onClick={() => {
+                                    setEditingUser(user);
+                                    setIsUserModalOpen(true);
+                                  }}
+                                  title={lang === 'es' ? 'Editar Usuario' : 'Edit User'}
+                                  className="p-1.5 rounded-lg bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:text-rose-500 hover:bg-rose-500/10 border border-[var(--border-subtle)] transition-all cursor-pointer"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+
+                                {/* Eliminar */}
+                                <button
+                                  onClick={() =>
+                                    setDeleteTarget({
+                                      type: 'user',
+                                      id: user.id,
+                                      name: user.name || user.username,
+                                    })
+                                  }
+                                  title={lang === 'es' ? 'Mover a papelera' : 'Move to trash'}
+                                  className="p-1.5 rounded-lg bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:text-rose-500 hover:bg-rose-500/10 border border-[var(--border-subtle)] transition-all cursor-pointer"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
                             )}
-
-                            {/* Alternar Estado Activo/Inactivo */}
-                            <button
-                              onClick={() => handleToggleStatus(user)}
-                              title={
-                                user.isActive
-                                  ? lang === 'es' ? 'Deshabilitar Usuario' : 'Disable User'
-                                  : lang === 'es' ? 'Habilitar Usuario' : 'Enable User'
-                              }
-                              className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
-                                user.isActive
-                                  ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border-amber-500/20'
-                                  : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/20'
-                              }`}
-                            >
-                              {user.isActive ? <UserX size={14} /> : <UserCheck size={14} />}
-                            </button>
-
-                            {/* Editar */}
-                            <button
-                              onClick={() => {
-                                setEditingUser(user);
-                                setIsUserModalOpen(true);
-                              }}
-                              title={lang === 'es' ? 'Editar Usuario' : 'Edit User'}
-                              className="p-1.5 rounded-lg bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:text-rose-500 hover:bg-rose-500/10 border border-[var(--border-subtle)] transition-all cursor-pointer"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-
-                            {/* Eliminar */}
-                            <button
-                              onClick={() =>
-                                setDeleteTarget({
-                                  type: 'user',
-                                  id: user.id,
-                                  name: user.name || user.username,
-                                })
-                              }
-                              title={lang === 'es' ? 'Eliminar Usuario' : 'Delete User'}
-                              className="p-1.5 rounded-lg bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:text-rose-500 hover:bg-rose-500/10 border border-[var(--border-subtle)] transition-all cursor-pointer"
-                            >
-                              <Trash2 size={14} />
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1224,18 +1360,25 @@ export default function UsuariosPage() {
       {/* MODAL: CONFIRMACIÓN DE BORRADO */}
       <DeleteConfirmModal
         isOpen={Boolean(deleteTarget)}
+        isSoftDelete={filterTrash !== 'trash' && deleteTarget?.type === 'user'}
         title={
           deleteTarget?.type === 'user'
-            ? lang === 'es' ? 'Eliminar Cuenta de Usuario' : 'Delete User Account'
+            ? filterTrash === 'trash'
+              ? lang === 'es' ? '¿Eliminar Cuenta Definitivamente?' : 'Permanently Delete User Account?'
+              : lang === 'es' ? '¿Mover Usuario a la Papelera?' : 'Move User to Trash?'
             : deleteTarget?.type === 'audit'
             ? lang === 'es' ? 'Purgar Registro de Auditoría' : 'Purge Audit Record'
             : lang === 'es' ? 'Remover de Lista Negra' : 'Remove from Blacklist'
         }
         message={
           deleteTarget?.type === 'user'
-            ? lang === 'es'
-                ? '¿Estás seguro de que deseas eliminar este usuario de la base de datos? Sus credenciales de acceso quedarán invalidadas.'
-                : 'Are you sure you want to permanently delete this user account? Sign-in credentials will be revoked.'
+            ? filterTrash === 'trash'
+              ? lang === 'es'
+                ? '¿Estás seguro de que deseas purgar permanentemente este usuario de la base de datos? Sus credenciales de acceso e historial quedarán invalidados.'
+                : 'Are you sure you want to permanently purge this user account? Sign-in credentials will be revoked.'
+              : lang === 'es'
+                ? 'La cuenta del usuario será desactivada y enviada a la papelera. Podrás restaurarla en cualquier momento.'
+                : 'The user account will be deactivated and moved to trash. You can restore it at any time.'
             : deleteTarget?.type === 'audit'
             ? lang === 'es'
                 ? '¿Estás seguro de purgar esta entrada del log de auditoría?'
@@ -1249,6 +1392,15 @@ export default function UsuariosPage() {
         lang={lang}
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* MODAL: IMPORTACIÓN MASIVA DE USUARIOS */}
+      <ImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        module="users"
+        lang={lang}
+        onSuccess={() => fetchData()}
       />
     </div>
   );

@@ -10,6 +10,7 @@ import {
   FinanzasPage,
   UsuariosPage,
 } from './pages/admin/PanelPages';
+import AnalyticsDashboardPage from './pages/AnalyticsDashboardPage';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Toaster } from 'sonner';
 import { useTheme } from './hooks/useTheme';
@@ -30,9 +31,10 @@ export default function App() {
       />
 
       <Routes>
-        {/* ── Rutas Públicas ── */}
+        {/* ── Rutas Públicas (Sin requerir Login) ── */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Login />} />
+        <Route path="/analitica" element={<AnalyticsDashboardPage />} />
 
         {/* ── Rutas Protegidas (Admin Dashboard) ── */}
         <Route
