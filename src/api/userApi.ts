@@ -28,6 +28,14 @@ export const deleteUser = (id: string) => {
   return api.delete(`/users/${id}`);
 };
 
+export const hardDeleteUser = (id: string) => {
+  return api.delete(`/users/${id}/hard`);
+};
+
+export const restoreUser = (id: string) => {
+  return api.patch<User>(`/users/${id}/restore`);
+};
+
 export const toggleUserStatus = (id: string) => {
   return api.patch<User>(`/users/${id}/toggle-status`);
 };

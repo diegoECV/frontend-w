@@ -41,6 +41,8 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  hardDeleteUser,
+  restoreUser,
   toggleUserStatus,
   exportUsersExcel,
   exportUsersPdf,
@@ -383,14 +385,13 @@ export default function UsuariosPage() {
     }
   };
 
-  // Restaurar usuario
+  // Restaurar usuario (Alta Lógica)
   const handleRestoreUser = async (user: User) => {
     try {
-      if (!user.isActive) {
-        await toggleUserStatus(user.id);
-      }
+      const res = await restoreUser(user.id);
+      const restored = res.data || { ...user, isActive: true };
       setUsers((prev) =>
-        prev.map((u) => (u.id === user.id ? { ...u, isActive: true } : u))
+        prev.map((u) => (u.id === user.id ? { ...u, ...restored, isActive: true } : u))
       );
       toast.success(
         lang === 'es'
@@ -418,8 +419,9 @@ export default function UsuariosPage() {
     try {
       if (deleteTarget.type === 'user') {
         if (filterTrash === 'trash') {
-          // Purgar definitivamente
-          await deleteUser(String(deleteTarget.id));
+          // Purgar definitivamente (Hard Delete)
+          await hardDeleteUser(String(deleteTarget.id));
+          setUsers((prev) => prev.filter((u) => u.id !== String(deleteTarget.id)));
           toast.success(
             lang === 'es' ? 'Cuenta de usuario purgada definitivamente' : 'User account permanently purged'
           );
@@ -431,24 +433,22 @@ export default function UsuariosPage() {
             link: '/usuarios',
           });
         } else {
-          // Desactivación lógica (enviar a papelera)
-          const target = users.find((u) => u.id === String(deleteTarget.id));
-          if (target && target.isActive) {
-            await toggleUserStatus(String(deleteTarget.id));
-          }
+          // Baja lógica (Soft Delete)
+          const res = await deleteUser(String(deleteTarget.id));
+          const deleted = res.data || { isActive: false };
           setUsers((prev) =>
-            prev.map((u) => (u.id === String(deleteTarget.id) ? { ...u, isActive: false } : u))
+            prev.map((u) => (u.id === String(deleteTarget.id) ? { ...u, ...deleted, isActive: false } : u))
           );
           toast.success(
             lang === 'es'
-              ? `Usuario "${deleteTarget.name}" enviado a la papelera (desactivado lógicamente)`
+              ? `Usuario "${deleteTarget.name}" enviado a la papelera (baja lógica)`
               : `User "${deleteTarget.name}" moved to trash`
           );
           notifyOperationUpdate({
             module: 'USUARIOS',
             actionType: 'PAPELERA',
             entityName: `Usuario ${deleteTarget.name}`,
-            details: `Usuario ${deleteTarget.name} enviado a la papelera (desactivado).`,
+            details: `Usuario ${deleteTarget.name} enviado a la papelera (desactivado lógicamente).`,
             link: '/usuarios',
           });
         }

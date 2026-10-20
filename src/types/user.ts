@@ -21,9 +21,17 @@ export interface User {
   phone?: string;
   role: UserRole | string;
   department?: string;
+  position?: string | null;
+  documentType?: string | null;
+  documentNumber?: string | null;
   isActive: boolean;
   lastLogin?: string | null;
   createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
 }
 
 export type AuditAction =
