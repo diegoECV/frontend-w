@@ -22,6 +22,14 @@ export const deleteProvider = (id: string) => {
   return api.delete(`/providers/${id}`);
 };
 
+export const hardDeleteProvider = (id: string) => {
+  return api.delete(`/providers/${id}/hard`);
+};
+
+export const restoreProvider = (id: string) => {
+  return api.patch<Provider>(`/providers/${id}/restore`);
+};
+
 export const exportProvidersExcel = async () => {
   const response = await api.get('/providers/export/excel', {
     responseType: 'blob',

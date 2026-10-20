@@ -22,6 +22,14 @@ export const deleteProduct = (id: string) => {
   return api.delete(`/products/${id}`);
 };
 
+export const hardDeleteProduct = (id: string) => {
+  return api.delete(`/products/${id}/hard`);
+};
+
+export const restoreProduct = (id: string) => {
+  return api.patch<Product>(`/products/${id}/restore`);
+};
+
 export const exportProductsExcel = async () => {
   const response = await api.get('/products/export/excel', {
     responseType: 'blob',
