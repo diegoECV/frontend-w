@@ -22,6 +22,14 @@ export const deleteClient = (id: string) => {
   return api.delete(`/clients/${id}`);
 };
 
+export const hardDeleteClient = (id: string) => {
+  return api.delete(`/clients/${id}/hard`);
+};
+
+export const restoreClient = (id: string) => {
+  return api.patch<Client>(`/clients/${id}/restore`);
+};
+
 export const exportClientsExcel = async () => {
   const response = await api.get('/clients/export/excel', {
     responseType: 'blob',

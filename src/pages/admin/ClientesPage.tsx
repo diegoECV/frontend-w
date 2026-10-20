@@ -39,6 +39,8 @@ import {
   createClient,
   updateClient,
   deleteClient,
+  hardDeleteClient,
+  restoreClient,
   exportClientsExcel,
   exportClientsPdf,
   exportClientsCsv,
@@ -241,13 +243,14 @@ export default function ClientesPage() {
     }
   };
 
-  // RESTAURAR CLIENTE
+  // RESTAURAR CLIENTE (Alta Lógica TSE)
   const handleRestoreClient = async (client: Client) => {
     if (!client.id) return;
     try {
-      await updateClient(client.id, { ...client, isActive: true, isDeleted: false });
+      const res = await restoreClient(client.id);
+      const restored = res.data || { ...client, isActive: true, isDeleted: false };
       setClients((prev) =>
-        prev.map((c) => (c.id === client.id ? { ...c, isActive: true, isDeleted: false } : c))
+        prev.map((c) => (c.id === client.id ? { ...c, ...restored, isActive: true, isDeleted: false } : c))
       );
       toast.success(
         lang === 'es'
@@ -271,8 +274,8 @@ export default function ClientesPage() {
     setDeleteModalState((p) => ({ ...p, isLoading: true }));
     try {
       if (filterTrash === 'trash') {
-        // Purga definitiva
-        await deleteClient(deleteModalState.id);
+        // Purga definitiva (Hard Delete)
+        await hardDeleteClient(deleteModalState.id);
         setClients((prev) => prev.filter((c) => c.id !== deleteModalState.id));
         toast.success(
           lang === 'es'
@@ -287,11 +290,11 @@ export default function ClientesPage() {
           link: '/clientes',
         });
       } else {
-        // Eliminación lógica (Mover a Papelera)
-        const target = clients.find((c) => c.id === deleteModalState.id);
-        await updateClient(deleteModalState.id, { ...target, isActive: false, isDeleted: true });
+        // Eliminación lógica (Baja Lógica TSE)
+        const res = await deleteClient(deleteModalState.id);
+        const deleted = res.data || { isActive: false, isDeleted: true };
         setClients((prev) =>
-          prev.map((c) => (c.id === deleteModalState.id ? { ...c, isActive: false, isDeleted: true } : c))
+          prev.map((c) => (c.id === deleteModalState.id ? { ...c, ...deleted, isActive: false, isDeleted: true } : c))
         );
         toast.success(
           lang === 'es'

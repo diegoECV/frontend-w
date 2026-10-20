@@ -29,4 +29,10 @@ export interface Client {
   language?: string | null;
   isActive?: boolean | null;
   isDeleted?: boolean | null;
+  createdAt?: string | null;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
 }
