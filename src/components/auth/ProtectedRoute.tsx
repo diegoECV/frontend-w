@@ -33,6 +33,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
       return <Navigate to="/cliente" replace />;
     }
 
+    // Si un administrador intenta ingresar a portales exclusivos de planta o cliente B2B, redirigir a su panel de administración
+    if (user.role === 'ADMIN') {
+      return <Navigate to="/" replace />;
+    }
+
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
         <motion.div
