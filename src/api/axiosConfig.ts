@@ -1,6 +1,14 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:9090/api/v1';
+const getDynamicBaseUrl = (): string => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+  return `http://${host}:9090/api/v1`;
+};
+
+export const BASE_URL = getDynamicBaseUrl();
 
 export const api = axios.create({
   baseURL: BASE_URL,

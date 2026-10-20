@@ -11,6 +11,7 @@ import type {
   ClientStatus 
 } from '../types/auth';
 import type { GoogleUserData } from '../services/googleAuth';
+import { BASE_URL } from '../api/axiosConfig';
 
 export interface AuthResult {
   ok: boolean;
@@ -203,8 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Intentar autenticar contra el backend Spring Boot
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:9090/api/v1';
-      const response = await fetch(`${baseUrl}/auth/login`, {
+      const response = await fetch(`${BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -396,8 +396,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Intentar guardar en backend MongoDB
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:9090/api/v1';
-      await fetch(`${baseUrl}/clients`, {
+      await fetch(`${BASE_URL}/clients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -5,8 +5,15 @@
 
 import axios from 'axios';
 
-const ANALYTICS_BASE_URL =
-  import.meta.env.VITE_ANALYTICS_API_URL || 'http://localhost:5000/api/v1/analytics';
+const getDynamicAnalyticsUrl = (): string => {
+  if (import.meta.env.VITE_ANALYTICS_API_URL) {
+    return import.meta.env.VITE_ANALYTICS_API_URL;
+  }
+  const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+  return `http://${host}:5000/api/v1/analytics`;
+};
+
+export const ANALYTICS_BASE_URL = getDynamicAnalyticsUrl();
 
 export const analyticsClient = axios.create({
   baseURL: ANALYTICS_BASE_URL,
