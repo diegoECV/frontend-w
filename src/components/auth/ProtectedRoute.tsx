@@ -23,6 +23,16 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
   }
 
   if (allowedRoles && !hasRole(allowedRoles)) {
+    // Si un trabajador intenta ingresar a rutas administrativas o no permitidas, redirigir a su portal de planta
+    if (user.role === 'TRABAJADOR') {
+      return <Navigate to="/trabajador" replace />;
+    }
+
+    // Si un cliente intenta ingresar a analítica interna o administración, redirigir a su portal B2B
+    if (user.role === 'CLIENTE') {
+      return <Navigate to="/cliente" replace />;
+    }
+
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
         <motion.div

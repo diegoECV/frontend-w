@@ -11,6 +11,10 @@ import {
   UsuariosPage,
 } from './pages/admin/PanelPages';
 import AnalyticsDashboardPage from './pages/AnalyticsDashboardPage';
+import WorkerDashboard from './pages/worker/WorkerDashboard';
+import WorkerLayout from './components/layout/WorkerLayout';
+import ClientDashboard from './pages/client/ClientDashboard';
+import ClientLayout from './components/layout/ClientLayout';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Toaster } from 'sonner';
 import { useTheme } from './hooks/useTheme';
@@ -34,13 +38,46 @@ export default function App() {
         {/* ── Rutas Públicas (Sin requerir Login) ── */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Login />} />
-        <Route path="/analitica" element={<AnalyticsDashboardPage />} />
 
-        {/* ── Rutas Protegidas (Admin Dashboard) ── */}
+        {/* ── Dashboard Analítico Reservado Exclusivamente para Admin y Trabajador ── */}
+        <Route
+          path="/analitica"
+          element={
+            <ProtectedRoute allowedRoles={['ADMIN', 'TRABAJADOR']}>
+              <AnalyticsDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Portal Exclusivo de Planta (Trabajador) Totalmente Separado ── */}
+        <Route
+          path="/trabajador"
+          element={
+            <ProtectedRoute allowedRoles={['TRABAJADOR', 'ADMIN']}>
+              <WorkerLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<WorkerDashboard />} />
+        </Route>
+
+        {/* ── Portal Exclusivo B2B Internacional (Cliente) Totalmente Separado ── */}
+        <Route
+          path="/cliente"
+          element={
+            <ProtectedRoute allowedRoles={['CLIENTE', 'ADMIN']}>
+              <ClientLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<ClientDashboard />} />
+        </Route>
+
+        {/* ── Portal Exclusivo de Administración (Admin Dashboard) ── */}
         <Route
           path="/"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['ADMIN']}>
               <MainLayout />
             </ProtectedRoute>
           }
@@ -73,3 +110,4 @@ export default function App() {
     </>
   );
 }
+

@@ -63,3 +63,8 @@ export const deleteQualityInspection = (id: string) => {
 export const getTemperatureLogs = () => {
   return api.get<TemperatureLog[]>('/temperature-logs');
 };
+
+export const createTemperatureLog = (log: Omit<TemperatureLog, 'id'>) => {
+  return api.post<TemperatureLog>('/temperature-logs', log);
+};
+

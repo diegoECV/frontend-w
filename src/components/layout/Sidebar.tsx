@@ -121,6 +121,7 @@ export default function Sidebar({ lang, pendingCount = 0 }: SidebarProps) {
     },
   ];
 
+
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);

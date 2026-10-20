@@ -22,8 +22,6 @@ import {
   AlertCircle,
   Clock,
   Building2,
-  BarChart3,
-  ArrowRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
@@ -445,33 +443,6 @@ export default function Login() {
                   </p>
                 </div>
 
-                {/* ── BOTÓN ACCESO DIRECTO AL DASHBOARD ANALÍTICO (SIN INICIAR SESIÓN) ── */}
-                <button
-                  type="button"
-                  onClick={() => navigate('/analitica')}
-                  className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-blue-500/10 border border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/15 transition-all text-left group cursor-pointer shadow-sm hover:shadow-md"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/25 group-hover:scale-105 transition-transform shrink-0">
-                      <BarChart3 size={20} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[var(--text-primary)]">
-                          Dashboard Analítico en Vivo
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 uppercase tracking-wider">
-                          Sin Login
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[var(--text-secondary)] truncate">
-                        Acceso para Trabajadores & Admin • Métricas de Planta y Ventas
-                      </p>
-                    </div>
-                  </div>
-                  <ArrowRight size={17} className="text-cyan-500 group-hover:translate-x-1 transition-transform shrink-0 ml-2" />
-                </button>
-
                 {/* Botón Oficial de Google OAuth 2.0 */}
                 <div className="space-y-2">
                   <button
@@ -634,6 +605,64 @@ export default function Login() {
                     )}
                   </button>
                 </form>
+
+                {/* ── ACCESOS RÁPIDOS DE DEMO / PRUEBAS DE ROLES ── */}
+                {authMode === 'login' && (
+                  <div className="pt-3 border-t border-[var(--border-subtle)] space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-hint)] block text-center">
+                      Acceso Rápido para Pruebas:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const res = await login('diego@visons.com', 'password123');
+                          if (res.ok) {
+                            toast.success('Ingresando al Panel de Administración', {
+                              description: 'Sesión iniciada como Diego Centeno (Administrador)',
+                            });
+                            navigate('/');
+                          }
+                        }}
+                        className="p-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                      >
+                        👑 Admin
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const res = await login('carlos.planta@visons.com', 'password123');
+                          if (res.ok) {
+                            toast.success('Ingresando al Portal de Planta', {
+                              description: 'Sesión iniciada como Carlos Ramírez (Operario de Planta)',
+                            });
+                            navigate('/trabajador');
+                          }
+                        }}
+                        className="p-2 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                      >
+                        👷‍♂️ Operario
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const res = await login('compras@globalfresh.us', 'password123');
+                          if (res.ok) {
+                            toast.success('Ingresando al Portal B2B del Cliente', {
+                              description: 'Sesión iniciada como Global Fresh Imports Inc. (Cliente)',
+                            });
+                            navigate('/cliente');
+                          }
+                        }}
+                        className="p-2 rounded-xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                      >
+                        🌎 Cliente B2B
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Garantía de Seguridad */}
                 <div className="pt-2 text-center text-[11px] text-[var(--text-hint)] flex items-center justify-center gap-1.5">
