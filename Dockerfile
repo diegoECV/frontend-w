@@ -16,7 +16,7 @@ COPY . .
 
 # Variables de entorno en tiempo de compilación para Vite
 ARG VITE_API_URL=http://localhost:9090/api/v1
-ARG VITE_ANALYTICS_API_URL=http://localhost:5000/api/v1
+ARG VITE_ANALYTICS_API_URL=http://localhost:5000/api/v1/analytics
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_ANALYTICS_API_URL=$VITE_ANALYTICS_API_URL
 
