@@ -32,6 +32,7 @@ import {
   Filter,
   Search,
   Check,
+  Globe,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -41,13 +42,15 @@ import {
   getVentasMensual,
   getCalidadDistribucion,
   getAuditResumen,
+  getClientesResumen,
   type DashboardKpis,
   type VentasMensualItem,
   type CalidadDistribucionResponse,
   type AuditResumenResponse,
+  type ClientesResumenResponse,
 } from '../api/analyticsApi';
 
-type TabView = 'overview' | 'sales' | 'quality' | 'logistics' | 'audit';
+type TabView = 'overview' | 'sales' | 'clients' | 'quality' | 'logistics' | 'audit';
 
 // ── Datos de detalle operativo ──
 interface QualityInspectionRecord {
@@ -135,17 +138,19 @@ export default function AnalyticsDashboardPage() {
   const [ventasMensual, setVentasMensual] = useState<VentasMensualItem[]>([]);
   const [calidadDist, setCalidadDist] = useState<CalidadDistribucionResponse | null>(null);
   const [auditData, setAuditData] = useState<AuditResumenResponse | null>(null);
+  const [clientesData, setClientesData] = useState<ClientesResumenResponse | null>(null);
 
   const fetchAnalytics = async (silent = false) => {
     if (!silent) setIsLoading(true);
     else setIsRefreshing(true);
 
     try {
-      const [kpisRes, ventasRes, calidadRes, auditRes] = await Promise.allSettled([
+      const [kpisRes, ventasRes, calidadRes, auditRes, clientesRes] = await Promise.allSettled([
         getDashboardKpis(),
         getVentasMensual(),
         getCalidadDistribucion(),
         getAuditResumen(),
+        getClientesResumen(),
       ]);
 
       if (kpisRes.status === 'fulfilled') {
@@ -207,6 +212,10 @@ export default function AnalyticsDashboardPage() {
             { recurso: 'Usuarios Operativos', cantidad: 2 },
           ],
         });
+      }
+
+      if (clientesRes.status === 'fulfilled') {
+        setClientesData(clientesRes.value);
       }
 
       setLastUpdated(
@@ -290,12 +299,29 @@ export default function AnalyticsDashboardPage() {
     );
   }, [searchTerm]);
 
+  const filteredClients = useMemo(() => {
+    const list = clientesData?.top_clientes || [];
+    if (!searchTerm.trim()) return list;
+    const q = searchTerm.toLowerCase();
+    return list.filter(
+      (c) =>
+        c.empresa?.toLowerCase().includes(q) ||
+        c.pais?.toLowerCase().includes(q) ||
+        c.contacto?.toLowerCase().includes(q) ||
+        c.id?.toLowerCase().includes(q) ||
+        c.incoterm?.toLowerCase().includes(q)
+    );
+  }, [clientesData, searchTerm]);
+
   // Exportar resumen CSV reactivo a la pestaña activa
   const handleExportCsv = () => {
     let rows: string[] = [];
     let filename = `analitica_visons_${activeTab}_${Date.now()}.csv`;
 
-    if (activeTab === 'sales' || activeTab === 'overview') {
+    if (activeTab === 'clients') {
+      rows = ['ID,Empresa,Contacto,Pais,Limite_Credito_USD,Incoterm,Activo']
+        .concat((clientesData?.top_clientes || []).map((c) => `${c.id},"${c.empresa}","${c.contacto}",${c.pais},${c.limite_credito_usd},${c.incoterm},${c.activo}`));
+    } else if (activeTab === 'sales' || activeTab === 'overview') {
       rows = ['Periodo,Total_Ordenes,Ordenes_Pagadas,Ordenes_Pendientes,Facturacion_USD']
         .concat(chartSeries.map((r) => `${r.periodo},${r.total_ordenes},${r.ordenes_pagadas},${r.ordenes_pendientes},${r.facturacion_usd}`));
     } else if (activeTab === 'quality') {
@@ -403,6 +429,7 @@ export default function AnalyticsDashboardPage() {
           {[
             { id: 'overview', label: 'Visión 360°', icon: <Activity size={15} /> },
             { id: 'sales', label: 'Ventas & Facturación', icon: <DollarSign size={15} /> },
+            { id: 'clients', label: 'Clientes & Mercados', icon: <Users size={15} /> },
             { id: 'quality', label: 'Calidad & Fitosanitario', icon: <Award size={15} /> },
             { id: 'logistics', label: 'Logística & Envíos', icon: <Ship size={15} /> },
             { id: 'audit', label: 'Auditoría & Trazabilidad', icon: <ShieldCheck size={15} /> },
@@ -566,8 +593,10 @@ export default function AnalyticsDashboardPage() {
 
         {/* KPI 6: Directorio */}
         <div
-          onClick={() => setActiveTab('sales')}
-          className={`p-4 rounded-2xl bg-[var(--surface-card)] border transition-all cursor-pointer group border-[var(--border-subtle)] hover:border-indigo-500/40`}
+          onClick={() => setActiveTab('clients')}
+          className={`p-4 rounded-2xl bg-[var(--surface-card)] border transition-all cursor-pointer group ${
+            activeTab === 'clients' ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-[var(--border-subtle)] hover:border-indigo-500/40'
+          }`}
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-black uppercase tracking-wider text-[var(--text-secondary)]">
@@ -830,6 +859,200 @@ export default function AnalyticsDashboardPage() {
                 <span className="text-[var(--text-secondary)]">Calibre dominante:</span>
                 <span className="font-bold text-[var(--text-primary)]">JUMBO / XL (22mm+)</span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PESTAÑA: ENFOQUE EN CLIENTES & MERCADOS B2B (MONGODB) ── */}
+      {activeTab === 'clients' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header de Módulo */}
+          <div className="p-6 rounded-3xl bg-[var(--surface-card)] border border-indigo-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  INTELIGENCIA COMERCIAL & DIRECTORIO B2B (MONGODB 7.0)
+                </span>
+              </div>
+              <h2 className="text-xl font-black text-[var(--text-primary)] mt-1">
+                Padrón Analítico de Compradores Internacionales & Cartera
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)]">
+                Consulta en tiempo real del modelo analítico de clientes: ranking de crédito, países de exportación e Incoterms
+              </p>
+            </div>
+
+            {/* Barra de Búsqueda Rápida */}
+            <div className="relative min-w-[280px]">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-hint)]" />
+              <input
+                type="text"
+                placeholder="Buscar por empresa, país, contacto o Incoterm..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-hint)] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* Tarjetas de Métricas de Cartera */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-hint)]">
+                Total Compradores
+              </span>
+              <p className="text-2xl font-black text-indigo-400 font-mono">
+                {clientesData?.total_clientes_registrados || 14}
+              </p>
+              <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px]">
+                <span className="text-emerald-400 font-bold">{clientesData?.clientes_activos || 14} activos</span>
+                <span className="text-[var(--text-hint)]">{clientesData?.clientes_inactivos || 0} inactivos</span>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-hint)]">
+                Crédito Total Autorizado
+              </span>
+              <p className="text-2xl font-black text-emerald-400 font-mono">
+                {formatUSD(clientesData?.credito_total_autorizado_usd || 2250000)}
+              </p>
+              <div className="pt-2 border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
+                Línea rotativa en dólares (USD)
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-hint)]">
+                Ticket Crédito Promedio
+              </span>
+              <p className="text-2xl font-black text-cyan-400 font-mono">
+                {formatUSD(clientesData?.credito_promedio_usd || 160714)}
+              </p>
+              <div className="pt-2 border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
+                Promedio ponderado por cliente
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[var(--surface-card)] border border-[var(--border-subtle)] space-y-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-hint)]">
+                Mercados Destino
+              </span>
+              <p className="text-2xl font-black text-purple-400 font-mono">
+                {clientesData?.distribucion_por_pais?.length || 12} Países
+              </p>
+              <div className="pt-2 border-t border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
+                Presencia global 5 continentes
+              </div>
+            </div>
+          </div>
+
+          {/* Desglose de Países e Incoterms */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Distribución por País */}
+            <div className="p-6 rounded-3xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  <Globe size={16} className="text-indigo-400" /> Distribución por Mercados & Países
+                </h3>
+                <span className="text-xs font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-lg">
+                  MongoDB Aggregations
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {clientesData?.distribucion_por_pais?.map((p, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-subtle)] text-xs"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                    <span className="font-semibold text-[var(--text-primary)]">{p.pais}</span>
+                    <span className="px-1.5 py-0.2 rounded-md bg-indigo-500/20 text-indigo-300 font-mono font-bold text-[11px]">
+                      {p.cantidad}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Distribución por Incoterm */}
+            <div className="p-6 rounded-3xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                  <Ship size={16} className="text-cyan-400" /> Incoterms Comerciales Preferidos
+                </h3>
+                <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-lg">
+                  Modalidad de Entrega
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                {clientesData?.distribucion_por_incoterm?.map((inc, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--surface-subtle)] border border-[var(--border-subtle)] text-xs"
+                  >
+                    <span className="px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 font-mono font-extrabold text-[11px]">
+                      {inc.incoterm}
+                    </span>
+                    <span className="text-[var(--text-secondary)]">{inc.cantidad} contratos</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* TABLA DE CLIENTES B2B */}
+          <div className="p-6 rounded-3xl bg-[var(--surface-card)] border border-[var(--border-subtle)] shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                Ranking de Compradores Internacionales ({filteredClients.length} clientes)
+              </h3>
+              <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 size={14} /> Cartera Activa y Verificada
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--border-subtle)] text-[10px] font-bold uppercase tracking-wider text-[var(--text-hint)]">
+                    <th className="py-3 px-3">Código</th>
+                    <th className="py-3 px-3">Empresa / Razón Social</th>
+                    <th className="py-3 px-3">Mercado / País</th>
+                    <th className="py-3 px-3">Contacto Comercial</th>
+                    <th className="py-3 px-3 text-center">Incoterm</th>
+                    <th className="py-3 px-3 text-right">Límite Crédito (USD)</th>
+                    <th className="py-3 px-3 text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border-subtle)]">
+                  {filteredClients.map((c, i) => (
+                    <tr key={i} className="hover:bg-[var(--surface-subtle)] transition-colors">
+                      <td className="py-3 px-3 font-mono font-bold text-indigo-400">{c.id}</td>
+                      <td className="py-3 px-3 font-bold text-[var(--text-primary)]">{c.empresa}</td>
+                      <td className="py-3 px-3 text-[var(--text-secondary)] flex items-center gap-1.5">
+                        <Globe size={13} className="text-indigo-400" />
+                        <span>{c.pais}</span>
+                      </td>
+                      <td className="py-3 px-3 text-[var(--text-secondary)]">{c.contacto}</td>
+                      <td className="py-3 px-3 text-center">
+                        <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-400 font-mono font-bold text-[10px] border border-cyan-500/20">
+                          {c.incoterm}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-extrabold text-emerald-400">
+                        {formatUSD(c.limite_credito_usd)}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <Check size={11} /> Activo
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

@@ -27,7 +27,7 @@ export const hardDeleteClient = (id: string) => {
 };
 
 export const restoreClient = (id: string) => {
-  return api.patch<Client>(`/clients/${id}/restore`);
+  return api.put<Client>(`/clients/${id}/restore`);
 };
 
 export const exportClientsExcel = async () => {

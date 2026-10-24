@@ -130,3 +130,30 @@ export const getAuditResumen = async (): Promise<AuditResumenResponse> => {
   const res = await analyticsClient.get<ApiResponse<AuditResumenResponse>>('/audit/resumen');
   return res.data.data;
 };
+
+export interface ClienteTopItem {
+  id: string;
+  empresa: string;
+  contacto: string;
+  pais: string;
+  limite_credito_usd: number;
+  incoterm: string;
+  activo: boolean;
+}
+
+export interface ClientesResumenResponse {
+  total_clientes_registrados: number;
+  clientes_activos: number;
+  clientes_inactivos: number;
+  credito_total_autorizado_usd: number;
+  credito_promedio_usd: number;
+  distribucion_por_pais: { pais: string; cantidad: number }[];
+  distribucion_por_incoterm: { incoterm: string; cantidad: number }[];
+  top_clientes: ClienteTopItem[];
+}
+
+export const getClientesResumen = async (): Promise<ClientesResumenResponse> => {
+  const res = await analyticsClient.get<ApiResponse<ClientesResumenResponse>>('/clientes/resumen');
+  return res.data.data;
+};
+

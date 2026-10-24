@@ -293,7 +293,7 @@ export default function UsuariosPage() {
         actionFilter === 'ALL' || (log.action || '').toUpperCase() === actionFilter;
 
       return matchesSearch && matchesAction;
-    });
+    }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [auditLogs, searchAudit, actionFilter]);
 
   // Acciones de Usuario
